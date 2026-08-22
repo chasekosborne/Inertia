@@ -1,0 +1,507 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Pendulum on a rope constraint",
+    "source": "demo",
+    "demoId": "rope-pendulum",
+    "description": "Bob m = 1 kg, r = 0.1 m, hanging from a light rope (M = 0.05 kg, 8 segments) of length ℓ = 1.2 m (pivot to COM). Released from rest at θ = 50° from vertical. Frictionless, no air. Small-angle T ≈ 2π√(ℓ/g) ≈ 2.198 s; finite-amplitude ≈ 2.302 s."
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "s": 0.7
+  },
+  "bodies": [
+    {
+      "id": "anchor_1",
+      "type": "anchor",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "angle": 0
+    },
+    {
+      "id": "bob",
+      "type": "ball",
+      "position": {
+        "x": 0.9192533317427736,
+        "y": 0.7713451316238472
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_0",
+      "type": "point-mass",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 0,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true,
+        "ropeHost": {
+          "body": "anchor_1",
+          "x": 0,
+          "y": 0
+        }
+      }
+    },
+    {
+      "id": "rope_1",
+      "type": "point-mass",
+      "position": {
+        "x": 0.1149066664678467,
+        "y": 0.0964181414529809
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 1,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_2",
+      "type": "point-mass",
+      "position": {
+        "x": 0.2298133329356934,
+        "y": 0.1928362829059618
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 2,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_3",
+      "type": "point-mass",
+      "position": {
+        "x": 0.3447199994035401,
+        "y": 0.2892544243589427
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 3,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_4",
+      "type": "point-mass",
+      "position": {
+        "x": 0.4596266658713868,
+        "y": 0.3856725658119236
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 4,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_5",
+      "type": "point-mass",
+      "position": {
+        "x": 0.5745333323392334,
+        "y": 0.4820907072649045
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 5,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_6",
+      "type": "point-mass",
+      "position": {
+        "x": 0.6894399988070802,
+        "y": 0.5785088487178854
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 6,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_7",
+      "type": "point-mass",
+      "position": {
+        "x": 0.8043466652749269,
+        "y": 0.6749269901708663
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 7,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "rope_8",
+      "type": "point-mass",
+      "position": {
+        "x": 0.9192533317427736,
+        "y": 0.7713451316238472
+      },
+      "angle": 0,
+      "mass": 0.005555555555555556,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.025,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "ropeSegment": true,
+        "ropeId": "rope",
+        "ropeIndex": 8,
+        "ropeCount": 8,
+        "ropeName": "Rope",
+        "ropeRestLength": 1.2,
+        "lockRotation": true,
+        "ropeHost": {
+          "body": "bob",
+          "x": 0,
+          "y": 0
+        }
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "rope_seg_0",
+      "type": "rod",
+      "bodyA": "anchor_1",
+      "bodyB": "rope_1",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_1",
+      "type": "rod",
+      "bodyA": "rope_1",
+      "bodyB": "rope_2",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_2",
+      "type": "rod",
+      "bodyA": "rope_2",
+      "bodyB": "rope_3",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_3",
+      "type": "rod",
+      "bodyA": "rope_3",
+      "bodyB": "rope_4",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_4",
+      "type": "rod",
+      "bodyA": "rope_4",
+      "bodyB": "rope_5",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_5",
+      "type": "rod",
+      "bodyA": "rope_5",
+      "bodyB": "rope_6",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_6",
+      "type": "rod",
+      "bodyA": "rope_6",
+      "bodyB": "rope_7",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    },
+    {
+      "id": "rope_seg_7",
+      "type": "rod",
+      "bodyA": "rope_7",
+      "bodyB": "bob",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.15,
+      "stiffness": 1,
+      "damping": 0,
+      "ropeLink": true,
+      "ropeId": "rope"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Spring — inelastic stick at x = d/2",
+    "source": "demo",
+    "demoId": "spring-inelastic-stick",
+    "description": "mass_1 is released from the left amplitude (d = 1 m) and oscillates on frictionless ground. mass_2 drops from above onto x ≈ 0.5 m and lands after mass_1 has already swung past; they stick on the next encounter. m = 1 kg, k = 40 N/m."
+  },
+  "metricOrigin": { "x": 0, "y": 0 },
+  "environment": {
+    "gravity": { "enabled": true, "g": 9.81 },
+    "air": { "enabled": false, "cd": 0.47, "area": 0.045, "rho": 1.225 }
+  },
+  "camera": { "s": 0.6 },
+  "bodies": [
+    {
+      "id": "ground_1",
+      "type": "ground",
+      "position": { "x": 0.25, "y": 0.1 },
+      "angle": 0,
+      "geometry": { "width": 5.5, "height": 0.2 },
+      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+    },
+    {
+      "id": "anchor_1",
+      "type": "anchor",
+      "position": { "x": -1.5, "y": -0.1 },
+      "angle": 0
+    },
+    {
+      "id": "mass_1",
+      "type": "box",
+      "position": { "x": -1, "y": -0.1 },
+      "angle": 0,
+      "mass": 1,
+      "velocity": { "vx": 0, "vy": 0 },
+      "geometry": { "width": 0.2, "height": 0.2 },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "stickOnContact": true,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "mass_2",
+      "type": "box",
+      "position": { "x": 0.5, "y": -2.8 },
+      "angle": 0,
+      "mass": 1,
+      "velocity": { "vx": 0, "vy": 0 },
+      "geometry": { "width": 0.2, "height": 0.2 },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "stickOnContact": true,
+        "lockRotation": true
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "spring_1",
+      "type": "spring",
+      "bodyA": "anchor_1",
+      "bodyB": "mass_1",
+      "anchorA": { "x": 0, "y": 0 },
+      "anchorB": { "x": 0, "y": 0 },
+      "restLength": 1.5,
+      "k": 40
+    }
+  ]
+}

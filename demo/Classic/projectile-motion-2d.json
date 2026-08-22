@@ -1,0 +1,80 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Two-dimensional projectile motion",
+    "source": "demo",
+    "demoId": "projectile-motion-2d",
+    "description": "Ball m = 1 kg launched from the origin with |v₀| = 3 m/s at θ = 60° above the horizontal. Frictionless ground, no air. Ideal range R = v₀² sin(2θ)/g ≈ 0.795 m; apex H = (v₀ sin θ)²/(2g) ≈ 0.344 m. Dynamic x and y track the ball along its trajectory."
+  },
+  "metricOrigin": { "x": 0, "y": 0 },
+  "environment": {
+    "gravity": { "enabled": true, "g": 9.81 },
+    "air": { "enabled": false, "cd": 0.47, "area": 0.045, "rho": 1.225 }
+  },
+  "camera": {
+    "center": { "x": 0.4, "y": -0.22 },
+    "view": { "width": 1.7, "height": 1.05 }
+  },
+  "bodies": [
+    {
+      "id": "ground_1",
+      "type": "ground",
+      "position": { "x": 0.45, "y": 0.1 },
+      "angle": 0,
+      "geometry": { "width": 2.2, "height": 0.2 },
+      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+    },
+    {
+      "id": "ball",
+      "type": "ball",
+      "label": "ball",
+      "position": { "x": 0, "y": -0.08 },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 1.5,
+        "vy": 2.598076211353316
+      },
+      "geometry": { "radius": 0.08 },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    }
+  ],
+  "constraints": [],
+  "labels": [
+    {
+      "id": "launch",
+      "text": "O",
+      "point": { "x": 0, "y": -0.08 },
+      "offset": { "x": -0.28, "y": 0.4 }
+    }
+  ],
+  "measurements": [
+    {
+      "id": "x_pos",
+      "kind": "length",
+      "label": "x",
+      "dynamic": true,
+      "component": "dx",
+      "signed": true,
+      "a": { "kind": "label", "label": "launch" },
+      "b": { "kind": "body", "body": "ball" }
+    },
+    {
+      "id": "y_pos",
+      "kind": "length",
+      "label": "y",
+      "dynamic": true,
+      "component": "dy",
+      "signed": true,
+      "a": { "kind": "label", "label": "launch" },
+      "b": { "kind": "body", "body": "ball" }
+    }
+  ]
+}

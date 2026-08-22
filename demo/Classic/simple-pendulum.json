@@ -1,0 +1,105 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Simple pendulum",
+    "source": "demo",
+    "demoId": "simple-pendulum",
+    "description": "Bob m = 1 kg, r = 0.1 m, on a massless rigid rod of length ℓ = 1.2 m (pivot at origin). Released from rest at θ = 35° from vertical. Frictionless, no air. Small-angle T ≈ 2π√(ℓ/g) ≈ 2.198 s; finite-amplitude ≈ 2.249 s."
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "s": 0.75
+  },
+  "bodies": [
+    {
+      "id": "anchor_1",
+      "type": "anchor",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "angle": 0
+    },
+    {
+      "id": "bob",
+      "type": "ball",
+      "label": "bob",
+      "position": {
+        "x": 0.6882917236212552,
+        "y": 0.9829824531467901
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "rod_1",
+      "type": "rod",
+      "bodyA": "anchor_1",
+      "bodyB": "bob",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 1.2,
+      "stiffness": 1,
+      "damping": 0
+    }
+  ],
+  "measurements": [
+    {
+      "id": "theta_arc",
+      "kind": "angle",
+      "label": "θ",
+      "vertex": {
+        "kind": "body",
+        "body": "anchor_1"
+      },
+      "a": {
+        "kind": "ray",
+        "body": "anchor_1",
+        "angleDeg": -90
+      },
+      "b": {
+        "kind": "body",
+        "body": "bob"
+      },
+      "signed": true
+    }
+  ]
+}

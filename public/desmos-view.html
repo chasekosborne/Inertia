@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inertia → Desmos</title>
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; font-family: system-ui, sans-serif; background: #f5f5f5; color: #2e2e2e; }
+      #banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 14px;
+        background: #fff;
+        border-bottom: 1px solid #ddd;
+        flex-shrink: 0;
+      }
+      #banner h1 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      #banner p {
+        font-size: 12px;
+        color: #666;
+      }
+      #banner a {
+        color: #2563a8;
+        font-size: 12px;
+      }
+      #status {
+        padding: 10px 14px;
+        font-size: 13px;
+        color: #a63d2f;
+        display: none;
+      }
+      #status.visible { display: block; }
+      #calculator {
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        top: 44px;
+      }
+      body.has-error #calculator { display: none; }
+    </style>
+  </head>
+  <body>
+    <header id="banner">
+      <div>
+        <h1 id="title">Inertia → Desmos</h1>
+        <p>Data and fit from Inertia · edit freely in Desmos</p>
+      </div>
+      <a href="https://www.desmos.com/calculator" target="_blank" rel="noopener">desmos.com</a>
+    </header>
+    <div id="status"></div>
+    <div id="calculator"></div>
+
+    <!-- Desmos demo API key — fine for local educational use; replace for production. -->
+    <script src="https://www.desmos.com/api/v1.11/calculator.js?apiKey=dcb31709b452b1cf9dc26972add0fda6"></script>
+    <script>
+      (function () {
+        const STORAGE_KEY = 'inertia-desmos-view-v1';
+        const statusEl = document.getElementById('status');
+        const titleEl = document.getElementById('title');
+
+        function fail(msg) {
+          document.body.classList.add('has-error');
+          statusEl.textContent = msg;
+          statusEl.classList.add('visible');
+        }
+
+        let payload = null;
+        try {
+          // localStorage is shared across tabs; sessionStorage is not.
+          const raw = localStorage.getItem(STORAGE_KEY)
+            || sessionStorage.getItem(STORAGE_KEY);
+          if (!raw) {
+            fail('No Inertia data found. Open a graph in Inertia and click “View in Desmos”.');
+            return;
+          }
+          payload = JSON.parse(raw);
+          try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+          try { sessionStorage.removeItem(STORAGE_KEY); } catch (_) {}
+        } catch (e) {
+          fail('Could not read Inertia export data.');
+          return;
+        }
+
+        if (payload.title) {
+          titleEl.textContent = payload.title;
+          document.title = payload.title;
+        }
+
+        if (typeof Desmos === 'undefined') {
+          fail('Could not load the Desmos calculator API. Check your network connection.');
+          return;
+        }
+
+        const elt = document.getElementById('calculator');
+        const calculator = Desmos.GraphingCalculator(elt, {
+          expressions: true,
+          settingsMenu: true,
+          zoomButtons: true,
+          expressionsTopbar: true,
+          border: false,
+          pasteGraphLink: true,
+        });
+
+        if (payload.viewport) {
+          calculator.setMathBounds({
+            left: payload.viewport.xmin,
+            right: payload.viewport.xmax,
+            bottom: payload.viewport.ymin,
+            top: payload.viewport.ymax,
+          });
+        }
+
+        if (Array.isArray(payload.expressions) && payload.expressions.length) {
+          calculator.setExpressions(payload.expressions);
+        }
+      })();
+    </script>
+  </body>
+</html>

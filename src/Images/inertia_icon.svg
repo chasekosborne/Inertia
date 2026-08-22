@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="33.640842mm"
+   height="33.640839mm"
+   viewBox="0 0 33.640842 33.640839"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   sodipodi:docname="inertia_icon.svg"
+   inkscape:export-filename="inertia_icon.png"
+   inkscape:export-xdpi="96.644424"
+   inkscape:export-ydpi="96.644424"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.35963205"
+     inkscape:cx="-88.979832"
+     inkscape:cy="450.4604"
+     inkscape:window-width="1644"
+     inkscape:window-height="1027"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1"
+     showguides="false" />
+  <defs
+     id="defs1">
+    <linearGradient
+       id="linearGradient1"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00aad4;stop-opacity:1;"
+         offset="0"
+         id="stop1" />
+      <stop
+         style="stop-color:#ffffff;stop-opacity:1;"
+         offset="1"
+         id="stop2" />
+    </linearGradient>
+    <rect
+       x="-142.36383"
+       y="-81.13208"
+       width="881.7373"
+       height="398.00641"
+       id="rect3" />
+    <rect
+       x="327.16653"
+       y="0"
+       width="466.53424"
+       height="621.8985"
+       id="rect2" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient1"
+       id="linearGradient2"
+       x1="-22.513"
+       y1="-123.41443"
+       x2="-45.285851"
+       y2="-178.16666"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(51.367533,157.05527)">
+    <path
+       id="path13"
+       style="fill:url(#linearGradient2);stroke:none;stroke-width:2.5;fill-opacity:1"
+       d="m -34.546854,-157.05527 a 16.820429,16.820429 0 0 0 -6.904488,1.4826 l 9.275919,16.0662 a 6.1804633,6.1804633 0 0 1 1.629875,-0.21859 6.1804633,6.1804633 0 0 1 6.180501,6.1805 6.1804633,6.1804633 0 0 1 -6.180501,6.17998 6.1804633,6.1804633 0 0 1 -6.180501,-6.17998 6.1804633,6.1804633 0 0 1 1.935282,-4.49223 l -9.275403,-16.06569 a 16.820429,16.820429 0 0 0 -7.301363,13.86789 16.820429,16.820429 0 0 0 16.820679,16.82016 16.820429,16.820429 0 0 0 16.820162,-16.82016 16.820429,16.820429 0 0 0 -16.820162,-16.82068 z" />
+  </g>
+</svg>

@@ -1,10 +1,12 @@
 import './units.js'; // patch Matter _baseDelta / Engine._deltaMax before other imports use the engine
-import Matter from 'matter-js';
 import { PhysicsEngine }    from './physics/engine.js';
 import { SvgRenderer }      from './renderer/svg-renderer.js';
 import { Recorder }         from './recorder/recorder.js';
 import { Playback }         from './recorder/playback.js';
 import { ExportControls }   from './exporter/export-controls.js';
+import { EnvironmentPanel } from './ui/environment-panel.js';
+import { SceneSession }     from './scene/scene-session.js';
+import { showToolbarToast } from './ui/toast.js';
 import { PropertiesPanel }  from './ui/properties.js';
 import { ObjectBrowser }    from './ui/object-browser.js';
 import { GraphHost }        from './ui/graph-panel.js';
@@ -14,10 +16,7 @@ import { LabelManager } from './ui/labels.js';
 import {
   buildBlankScene,
   deserializeScene,
-  serializeScene,
   cloneSceneDocument,
-  downloadSceneJSON,
-  pickAndLoadSceneFile,
   validateSceneDocument,
   captureSelectionClipboard,
   pasteClipboard,
@@ -30,40 +29,17 @@ import { CameraOverlay }    from './ui/camera-overlay.js';
 import { HistoryManager, captureSnapshot, applySnapshot } from './history.js';
 import { createPointMass, createBall, createBox, createWedge } from './physics/bodies.js';
 import { snapWorldCoord } from './grid.js';
-import {
-  PX_PER_M,
-  getForceArrowScale,
-  setForceArrowScale,
-  getVelocityArrowScale,
-  setVelocityArrowScale,
-} from './units.js';
 import { setMetricOriginEngine, getMetricOriginWorldPx } from './world-origin.js';
-import { applyQuadraticAirDrag } from './physics/air-drag.js';
 import { paramsForScene } from './experiment/params.js';
 import { createEditorContext } from './ui/handles/editor-context.js';
 import { ScaleHandles } from './ui/handles/scale-handles.js';
 import { VectorHandle } from './ui/handles/vector-handle.js';
 import { EditHandles } from './ui/handles/edit-handles.js';
 
-const { Events: MatterEvents } = Matter;
 
 // ── DOM refs ──────────────────────────────────────────────────────
 
 // Environment panel
-const envGravityToggle = document.getElementById('env-gravity-toggle');
-const envGRow          = document.getElementById('env-g-row');
-const envG             = document.getElementById('env-g');
-const envAirToggle  = document.getElementById('env-air-toggle');
-const envCdRow      = document.getElementById('env-cd-row');
-const envAreaRow    = document.getElementById('env-area-row');
-const envRhoRow     = document.getElementById('env-rho-row');
-const envCd         = document.getElementById('env-cd');
-const envArea       = document.getElementById('env-area');
-const envRho        = document.getElementById('env-rho');
-const envArrowForceScale = document.getElementById('env-force-arrow-scale');
-const envArrowForceScaleLabel = document.getElementById('env-force-arrow-scale-label');
-const envArrowVelScale = document.getElementById('env-vel-arrow-scale');
-const envArrowVelScaleLabel = document.getElementById('env-vel-arrow-scale-label');
 const btnPresetMenu = document.getElementById('btn-preset-menu');
 const presetMenu    = document.getElementById('preset-menu');
 const presetMenuWrap = document.getElementById('preset-menu-wrap');
@@ -72,7 +48,6 @@ const btnSceneSave  = document.getElementById('btn-scene-save');
 const btnSceneNew   = document.getElementById('btn-scene-new');
 const btnSceneReset = document.getElementById('btn-scene-reset');
 const btnSceneClear = document.getElementById('btn-scene-clear');
-const toolbarToast  = document.getElementById('toolbar-toast');
 const btnSettings   = document.getElementById('btn-settings');
 const settingsBackdrop = document.getElementById('settings-backdrop');
 const btnSettingsClose = document.getElementById('btn-settings-close');
@@ -131,6 +106,8 @@ let _obPinnedCollapsed = false;
 // ── Core objects ─────────────────────────────────────────────────
 const engine   = new PhysicsEngine();
 setMetricOriginEngine(engine);
+/** Gravity / air-drag / arrow-scale settings panel. */
+const environmentPanel = new EnvironmentPanel(engine);
 const renderer = new SvgRenderer(svg, engine);
 const camera   = new Camera();
 const cameraRig = new CameraRig();
@@ -221,14 +198,8 @@ const graphHost = new GraphHost({
     }
     return body.id;
   },
-  getBaselineScene: () => {
-    if (!_sceneBaseline) return null;
-    // Keep sweep/graph measurement lists in sync with the live overlay set.
-    const doc = cloneSceneDocument(_sceneBaseline);
-    doc.measurements = measurements.toScene();
-    return doc;
-  },
-  getSceneName: () => _sceneSource?.name ?? _sceneBaseline?.meta?.name ?? null,
+  getBaselineScene: () => sceneSession.baselineWithLiveMeasurements(),
+  getSceneName: () => sceneSession.name,
   getEngine: () => engine,
   onSweepPoint: ({ x, paramId, paramLabel, baseline }) => {
     if (!baseline || !paramId || !Number.isFinite(x)) return false;
@@ -335,6 +306,15 @@ const measurements = new MeasurementManager({
     objectBrowser?.setSelection(sel);
     _syncPropsPanel();
   },
+});
+
+/** Current scene identity: Reset baseline, source, and the file operations. */
+const sceneSession = new SceneSession({
+  engine, camera, cameraRig, measurements, labels, environmentPanel,
+  resetButton: btnSceneReset,
+  getToolMode: () => interaction.mode,
+  getViewSize: () => _viewSize(),
+  loadDocument: (doc, source, opts) => _loadSceneDocument(doc, source, opts),
 });
 
 // Push a snapshot onto the undo stack, used only during setup phase.
@@ -519,10 +499,6 @@ renderer.onSelect(_onSandboxSelect);
 // 'live'   : physics running, recording active (if toggled).
 // 'review' : physics frozen, scrubbing through recorded frames.
 let appMode   = 'setup';
-/** @type {import('./scene/schema.js').SceneDocument|null} */
-let _sceneBaseline = null;
-/** @type {{ type: 'blank'|'file', name: string }|null} */
-let _sceneSource = null;
 
 function setMode(mode) {
   appMode = mode;
@@ -648,9 +624,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     // Prefer graph home when the pointer is over a plot.
     if (graphHost.resetHoveredView()) return;
-    const scale = (typeof _sceneBaseline?.camera?.s === 'number' && Number.isFinite(_sceneBaseline.camera.s))
-      ? _sceneBaseline.camera.s
-      : DEFAULT_CAMERA_SCALE;
+    const scale = sceneSession.baselineCameraScale ?? DEFAULT_CAMERA_SCALE;
     _frameMetricBasis(scale);
     if (interaction.mode === 'camera') cameraOverlay.sync();
     return;
@@ -680,7 +654,7 @@ document.addEventListener('keydown', e => {
   // Save checkpoint for Reset (Ctrl/Cmd+S)
   if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
     e.preventDefault();
-    _saveSceneCheckpoint();
+    sceneSession.saveCheckpoint();
     return;
   }
   if (e.code === 'Space') {
@@ -1304,228 +1278,6 @@ svg.addEventListener('wheel', e => {
   camera.onWheel(e.clientX - rect.left, e.clientY - rect.top, e.deltaY);
 }, { passive: false });
 
-// ── Environment panel ─────────────────────────────────────────────
-// Physics unit: 100 px = 1 m. Fixed step ≈ 1000/SIM_HZ ms (see units.js).
-// Matter gravity formula: force = mass * g.y * g.scale
-// To get real-world acceleration: a_px = g_ms2 * PX_PER_M = g_ms2 * 100 px/s²
-// Matter scale links g.y (dimensionless 1) to px/ms² implicitly via dt in ms.
-// With scale=0.001, g.y=1 → ~9.8 px/(physics step)² at the chosen SIM_HZ ≈ real-ish.
-// We expose g in m/s² and compute scale = g_ms2 * 0.001 / 9.81 so the default
-// 9.81 → scale 0.001 as before.
-
-function _applyGravity() {
-  const enabled = envGravityToggle.checked;
-  const gMs2    = enabled ? (parseFloat(envG.value) || 9.81) : 0;
-  engine.engine.gravity.y     = 1;
-  engine.engine.gravity.x     = 0;
-  engine.engine.gravity.scale = gMs2 * 0.001 / 9.81;
-  engine.invalidateEnergyTarget();
-}
-
-function _syncGravityRowUI() {
-  const disabled = !envGravityToggle.checked;
-  envGRow.style.opacity       = disabled ? '0.35' : '1';
-  envGRow.style.pointerEvents = disabled ? 'none'  : '';
-}
-
-envGravityToggle.addEventListener('change', () => {
-  _syncGravityRowUI();
-  _applyGravity();
-});
-
-// Air-drag is applied each physics step via a per-body force.
-// F_drag = 0.5 * rho * Cd * A * v² (N), converted to px-force.
-// frictionAir in Matter is a velocity multiplier per step (dimensionless).
-// We bypass frictionAir and instead apply an explicit force so Cd/rho/A are real.
-let _airEnabled = false;
-
-function _syncAirRowsUI() {
-  const disabled = !_airEnabled;
-  [envCdRow, envAreaRow, envRhoRow].forEach(r => {
-    r.style.opacity       = disabled ? '0.35' : '1';
-    r.style.pointerEvents = disabled ? 'none'  : '';
-  });
-}
-
-function _airParams() {
-  return {
-    rho:  parseFloat(envRho.value)  || 1.225,
-    Cd:   parseFloat(envCd.value)   || 0.47,
-    A:    parseFloat(envArea.value) || 0.045,
-  };
-}
-
-// Register a before-update hook to apply drag force
-MatterEvents.on(engine.engine, 'beforeUpdate', () => {
-  if (!_airEnabled) return;
-  applyQuadraticAirDrag(engine.bodies, _airParams(), engine);
-});
-
-envAirToggle.addEventListener('change', () => {
-  _airEnabled = envAirToggle.checked;
-  _syncAirRowsUI();
-});
-
-// ── Explicit spring forces are solved in PhysicsEngine._solveSprings() ──
-// (SpringConstraint: not Matter rigid links)
-[envG, envCd, envArea, envRho].forEach(el => {
-  el.addEventListener('change', _applyGravity);
-});
-_applyGravity();
-
-function _formatArrowScale(scale) {
-  return `${Number(scale).toFixed(1)}×`;
-}
-
-function _syncForceArrowScaleUI(scale = getForceArrowScale()) {
-  if (envArrowForceScale) {
-    envArrowForceScale.value = String(scale);
-    envArrowForceScale.setAttribute('aria-valuenow', String(scale));
-  }
-  if (envArrowForceScaleLabel) {
-    envArrowForceScaleLabel.textContent = _formatArrowScale(scale);
-  }
-}
-
-function _syncVelocityArrowScaleUI(scale = getVelocityArrowScale()) {
-  if (envArrowVelScale) {
-    envArrowVelScale.value = String(scale);
-    envArrowVelScale.setAttribute('aria-valuenow', String(scale));
-  }
-  if (envArrowVelScaleLabel) {
-    envArrowVelScaleLabel.textContent = _formatArrowScale(scale);
-  }
-}
-
-function _applyForceArrowScale() {
-  const raw = parseFloat(envArrowForceScale?.value ?? '1');
-  const scale = setForceArrowScale(Number.isFinite(raw) ? raw : 1);
-  _syncForceArrowScaleUI(scale);
-}
-
-function _applyVelocityArrowScale() {
-  const raw = parseFloat(envArrowVelScale?.value ?? '1');
-  const scale = setVelocityArrowScale(Number.isFinite(raw) ? raw : 1);
-  _syncVelocityArrowScaleUI(scale);
-}
-
-envArrowForceScale?.addEventListener('input', _applyForceArrowScale);
-envArrowVelScale?.addEventListener('input', _applyVelocityArrowScale);
-_syncForceArrowScaleUI();
-_syncVelocityArrowScaleUI();
-
-
-
-/** Apply environment toggles after loading a scene (gravity / air drag). */
-function _readEnvironmentFromUI() {
-  return {
-    gravity: {
-      enabled: envGravityToggle.checked,
-      g: parseFloat(envG.value) || 9.81,
-    },
-    air: {
-      enabled: _airEnabled,
-      cd: parseFloat(envCd.value) || 0.47,
-      area: parseFloat(envArea.value) || 0.045,
-      rho: parseFloat(envRho.value) || 1.225,
-    },
-  };
-}
-
-function _applyEnvironmentFromScene(env) {
-  if (!env) return;
-  envGravityToggle.checked = env.gravity?.enabled ?? true;
-  envG.value = env.gravity?.g ?? 9.81;
-  _syncGravityRowUI();
-  _applyGravity();
-
-  envAirToggle.checked = env.air?.enabled ?? false;
-  _airEnabled = env.air?.enabled ?? false;
-  if (env.air) {
-    envCd.value = env.air.cd ?? 0.47;
-    envArea.value = env.air.area ?? 0.045;
-    envRho.value = env.air.rho ?? 1.225;
-  }
-  _syncAirRowsUI();
-}
-
-function _updateSceneResetButton() {
-  if (!btnSceneReset) return;
-  const hasBaseline = !!_sceneBaseline;
-  btnSceneReset.disabled = !hasBaseline;
-  const name = _sceneSource?.name ?? 'saved setup';
-  const label = hasBaseline
-    ? `Reset to last saved (“${name}”)`
-    : 'Reset scene';
-  btnSceneReset.title = label;
-  btnSceneReset.setAttribute('aria-label', label);
-}
-
-/**
- * Capture the live setup as the Reset checkpoint (Ctrl+S).
- * Does not download a file — use Export JSON for that.
- */
-function _saveSceneCheckpoint() {
-  // Match export: free pan/zoom → store the view the user sees, unless the
-  // camera tool owns the intentional export frame.
-  if (interaction.mode !== 'camera') {
-    const { width, height } = _viewSize();
-    if (width >= 2 && height >= 2) {
-      cameraRig.syncFromCamera(camera, width, height);
-    }
-  }
-  const name = _sceneSource?.name ?? _sceneBaseline?.meta?.name ?? 'Untitled scene';
-  const doc = serializeScene(engine, {
-    meta: {
-      name,
-      source: _sceneSource?.type ?? 'editor',
-    },
-    environment: _readEnvironmentFromUI(),
-    camera: cameraRig.toSceneDoc(),
-    measurements: measurements.toScene(),
-    labels: labels.toScene(),
-  });
-  const validated = validateSceneDocument(doc);
-  if (!validated.ok) {
-    alert(validated.error);
-    return;
-  }
-  _sceneBaseline = cloneSceneDocument(validated.doc);
-  if (!_sceneSource) {
-    _sceneSource = { type: 'editor', name };
-  } else {
-    _sceneSource = { ..._sceneSource, name };
-  }
-  _updateSceneResetButton();
-  _showToolbarToast('Setup saved');
-}
-
-/** @type {ReturnType<typeof setTimeout>|null} */
-let _toolbarToastTimer = null;
-
-/**
- * Brief fade-in confirmation under the top toolbar.
- * @param {string} message
- */
-function _showToolbarToast(message) {
-  if (!toolbarToast) return;
-  if (_toolbarToastTimer) {
-    clearTimeout(_toolbarToastTimer);
-    _toolbarToastTimer = null;
-  }
-  toolbarToast.textContent = message;
-  toolbarToast.classList.remove('hidden');
-  // Force reflow so re-showing restarts the opacity transition.
-  void toolbarToast.offsetWidth;
-  toolbarToast.classList.add('visible');
-  _toolbarToastTimer = setTimeout(() => {
-    toolbarToast.classList.remove('visible');
-    _toolbarToastTimer = setTimeout(() => {
-      toolbarToast.classList.add('hidden');
-      _toolbarToastTimer = null;
-    }, 240);
-  }, 1600);
-}
 
 function _clearEntireScene() {
   const ok = window.confirm(
@@ -1550,7 +1302,7 @@ function _finishSceneLoad(source) {
   exportControls.syncButtons(true);
   setMode('setup');
   _updateMainTransportButton();
-  _updateSceneResetButton();
+  sceneSession.updateResetButton();
   _syncGraphs(true);
   graphHost.refreshSweepOptions();
 }
@@ -1595,7 +1347,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
   labels.loadFromScene(doc);
   measurements.loadFromScene(doc);
 
-  if (environment) _applyEnvironmentFromScene(environment);
+  if (environment) environmentPanel.applyScene(environment);
 
   // Camera framing from scene doc, or default metric-basis view.
   const bodyByLabel = new Map(
@@ -1616,14 +1368,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
     });
   }
 
-  if (storeBaseline) {
-    _sceneBaseline = cloneSceneDocument(doc);
-    _sceneSource = {
-      type: source.type === 'reset' ? (_sceneSource?.type ?? 'blank') : source.type,
-      name: source.name,
-      demoId: source.demoId ?? (source.type === 'reset' ? _sceneSource?.demoId : undefined),
-    };
-  }
+  if (storeBaseline) sceneSession.adopt(doc, source);
 
   _finishSceneLoad(source);
   _clearSelectionAfterLoad();
@@ -1632,57 +1377,6 @@ function _loadSceneDocument(doc, source, opts = {}) {
 function _loadBlankScene() {
   const doc = buildBlankScene();
   _loadSceneDocument(doc, { type: 'blank', name: doc.meta?.name ?? 'Untitled scene' });
-}
-
-function _resetScene() {
-  if (!_sceneBaseline) return;
-  _loadSceneDocument(
-    cloneSceneDocument(_sceneBaseline),
-    {
-      type: 'reset',
-      name: _sceneSource?.name ?? 'Scene',
-      demoId: _sceneSource?.demoId,
-    },
-    { storeBaseline: false },
-  );
-}
-
-function _exportSceneJSON() {
-  // Free pan/zoom updates the live camera but not the rig. Sync so the file
-  // stores the view the user sees — except in camera-tool mode, where the rig
-  // is the intentional export frame and may differ from the live pan.
-  if (interaction.mode !== 'camera') {
-    const { width, height } = _viewSize();
-    if (width >= 2 && height >= 2) {
-      cameraRig.syncFromCamera(camera, width, height);
-    }
-  }
-  const doc = serializeScene(engine, {
-    meta: {
-      name: _sceneSource?.name ?? 'Scene',
-      source: _sceneSource?.type ?? 'editor',
-    },
-    environment: _readEnvironmentFromUI(),
-    camera: cameraRig.toSceneDoc(),
-    measurements: measurements.toScene(),
-    labels: labels.toScene(),
-  });
-  const slug = (doc.meta?.name ?? 'scene').replace(/[^\w\-]+/g, '-').toLowerCase();
-  downloadSceneJSON(doc, `${slug}.json`);
-}
-
-async function _importSceneJSON() {
-  const result = await pickAndLoadSceneFile();
-  if (!result.ok) {
-    if (result.error !== 'No file selected.') {
-      alert(result.error);
-    }
-    return;
-  }
-  _loadSceneDocument(result.doc, {
-    type: 'file',
-    name: result.doc.meta?.name ?? 'Imported scene',
-  });
 }
 
 function _closePresetMenu() {
@@ -1724,16 +1418,16 @@ btnSceneNew?.addEventListener('click', () => {
 
 btnSceneLoad?.addEventListener('click', () => {
   _closePresetMenu();
-  _importSceneJSON();
+  sceneSession.importFromFile();
 });
 
 btnSceneSave?.addEventListener('click', () => {
   _closePresetMenu();
-  _exportSceneJSON();
+  sceneSession.exportToFile();
 });
 
 btnSceneReset?.addEventListener('click', () => {
-  _resetScene();
+  sceneSession.restoreBaseline();
 });
 
 btnSceneClear?.addEventListener('click', () => {

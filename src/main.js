@@ -29,7 +29,7 @@ import {
   removeRope, ropeSelection, setRopeEndAttachment, getRopeEndAttachment,
   ropeEndNode, snapRopePins,
 } from './physics/rope.js';
-import { Camera, DEFAULT_CAMERA_SCALE } from './camera/camera.js';
+import { Camera } from './camera/camera.js';
 import { CameraRig }        from './camera/camera-rig.js';
 import { CameraOverlay }    from './ui/camera-overlay.js';
 import { HistoryManager, captureSnapshot, applySnapshot } from './history.js';
@@ -87,12 +87,16 @@ const envArrowForceScale = document.getElementById('env-force-arrow-scale');
 const envArrowForceScaleLabel = document.getElementById('env-force-arrow-scale-label');
 const envArrowVelScale = document.getElementById('env-vel-arrow-scale');
 const envArrowVelScaleLabel = document.getElementById('env-vel-arrow-scale-label');
+const envGridToggle = document.getElementById('env-grid-toggle');
+const envSnapToggle = document.getElementById('env-snap-toggle');
+const envOriginToggle = document.getElementById('env-origin-toggle');
+const envVectorsToggle = document.getElementById('env-vectors-toggle');
+const envTracesToggle = document.getElementById('env-traces-toggle');
 const btnPresetMenu = document.getElementById('btn-preset-menu');
 const presetMenu    = document.getElementById('preset-menu');
 const presetMenuWrap = document.getElementById('preset-menu-wrap');
 const btnSceneLoad  = document.getElementById('btn-scene-load');
 const btnSceneSave  = document.getElementById('btn-scene-save');
-const btnSceneNew   = document.getElementById('btn-scene-new');
 const btnSceneReset = document.getElementById('btn-scene-reset');
 const btnSceneClear = document.getElementById('btn-scene-clear');
 const toolbarToast  = document.getElementById('toolbar-toast');
@@ -104,11 +108,6 @@ const btnSettingsClose = document.getElementById('btn-settings-close');
 const btnPlayPause  = document.getElementById('btn-play-pause');
 const speedSlider   = document.getElementById('speed-slider');
 const speedLabel    = document.getElementById('speed-label');
-const btnGrid       = document.getElementById('btn-grid');
-const btnSnap       = document.getElementById('btn-snap');
-const btnOrigin     = document.getElementById('btn-origin');
-const btnVectors    = document.getElementById('btn-vectors');
-const btnTraces     = document.getElementById('btn-traces');
 const btnExportSvg  = document.getElementById('btn-export-svg');
 const btnExportMp4  = document.getElementById('btn-export-mp4');
 const videoExportBackdrop = document.getElementById('video-export-backdrop');
@@ -130,6 +129,7 @@ const btnAddGraph   = document.getElementById('btn-add-graph');
 const iconPlay      = document.getElementById('icon-play');
 const iconPause     = document.getElementById('icon-pause');
 const canvasContainer = document.getElementById('canvas-container');
+const timelineBar   = document.getElementById('timeline-bar');
 
 // Timeline
 const tlBadge       = document.getElementById('tl-mode-badge');
@@ -159,14 +159,11 @@ const statusConstr  = document.getElementById('status-constraints');
 const statusRec     = document.getElementById('status-record');
 const recFramesEl   = document.getElementById('rec-frames');
 const propsContent  = document.getElementById('properties-content');
-const propsWrap     = document.getElementById('properties-wrap');
-const btnPropsToggle = document.getElementById('btn-props-toggle');
+const sidebarWrap   = document.getElementById('sidebar-wrap');
+const btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
 const obContent     = document.getElementById('object-browser-content');
-const obWrap        = document.getElementById('object-browser-wrap');
-const btnObToggle   = document.getElementById('btn-ob-toggle');
 
-let _propsPinnedCollapsed = false;
-let _obPinnedCollapsed = false;
+let _sidebarCollapsed = true;
 
 // ── Core objects ─────────────────────────────────────────────────
 const engine   = new PhysicsEngine();
@@ -335,7 +332,6 @@ const labels = new LabelManager({
       props?.show(sel);
       objectBrowser?.setSelection(sel);
       objectBrowser?.scheduleRefresh();
-      _syncPropsPanel();
     }
   },
 });
@@ -355,7 +351,7 @@ const measurements = new MeasurementManager({
     renderer.select([]);
     props?.show(sel);
     objectBrowser?.setSelection(sel);
-    _syncPropsPanel();
+    objectBrowser?.scheduleRefresh();
   },
 });
 
@@ -393,7 +389,7 @@ let _velHandleAngleSnap = false;
 /** Handle edits either initial velocity or applied force (double-click tip to toggle). */
 let _vectorHandleMode = 'velocity'; // 'velocity' | 'force'
 
-const VEL_HANDLE_COLOR = '#2980b9';
+const VEL_HANDLE_COLOR = '#2d70b3';
 const FORCE_HANDLE_COLOR = '#c0392b';
 
 let _selHandleG = null;
@@ -417,30 +413,20 @@ function _clearScaleHandles() {
   _scaleHandleDrag = null;
 }
 
-function _isPropsCollapsed() {
-  return !_currentSelection || _propsPinnedCollapsed;
-}
-
-function _syncPropsPanel() {
-  const collapsed = _isPropsCollapsed();
-  propsWrap?.classList.toggle('collapsed', collapsed);
-  btnPropsToggle?.setAttribute('aria-expanded', String(!collapsed));
-  if (btnPropsToggle) {
-    btnPropsToggle.title = collapsed ? 'Expand properties' : 'Collapse properties';
-  }
-}
-
-function _syncObjectBrowserPanel() {
-  const collapsed = _obPinnedCollapsed;
-  obWrap?.classList.toggle('collapsed', collapsed);
-  btnObToggle?.setAttribute('aria-expanded', String(!collapsed));
-  if (btnObToggle) {
-    btnObToggle.title = collapsed ? 'Expand object browser' : 'Collapse object browser';
+function _syncSidebar() {
+  sidebarWrap?.classList.toggle('collapsed', _sidebarCollapsed);
+  btnSidebarToggle?.setAttribute('aria-expanded', String(!_sidebarCollapsed));
+  if (btnSidebarToggle) {
+    btnSidebarToggle.title = _sidebarCollapsed ? 'Open sidebar' : 'Close sidebar';
   }
 }
 
 function _onSandboxSelect(selection) {
   if (interaction.mode === 'camera') return;
+  if (selection) {
+    _sidebarCollapsed = false;
+    _syncSidebar();
+  }
   if (selection?.type === 'measurement') {
     labels.select(null);
     measurements.select(selection.id);
@@ -448,7 +434,6 @@ function _onSandboxSelect(selection) {
     renderer.select([]);
     props.show(selection);
     objectBrowser?.setSelection(selection);
-    _syncPropsPanel();
     return;
   }
   if (selection?.type === 'label') {
@@ -458,7 +443,6 @@ function _onSandboxSelect(selection) {
     renderer.select([]);
     props.show(selection);
     objectBrowser?.setSelection(selection);
-    _syncPropsPanel();
     return;
   }
   if (selection?.type === 'body') {
@@ -490,7 +474,6 @@ function _onSandboxSelect(selection) {
     _clearScaleHandles();
     _scaleBuildKey = '';
   }
-  _syncPropsPanel();
 }
 
 const props = new PropertiesPanel(propsContent, engine, _pushHistory, (idOrSel, partIndex = null) => {
@@ -506,7 +489,6 @@ const props = new PropertiesPanel(propsContent, engine, _pushHistory, (idOrSel, 
   _currentSelection = { type: 'body', id: idOrSel, partIndex };
   renderer.select([idOrSel], { partIndex });
   objectBrowser?.setSelection(_currentSelection);
-  _syncPropsPanel();
 }, () => _snapEnabled, {
   getManager: () => measurements,
   getLabelManager: () => labels,
@@ -529,7 +511,7 @@ const objectBrowser = new ObjectBrowser(obContent, engine, {
   onAggregateChange: () => objectBrowser.scheduleRefresh(),
 });
 objectBrowser.refresh();
-_syncObjectBrowserPanel();
+_syncSidebar();
 
 /** Keep selection and graphs following sticky groups after a weld. */
 engine.onWeld((compound, removedIds) => {
@@ -551,18 +533,9 @@ engine.onWeld((compound, removedIds) => {
   });
 });
 
-btnPropsToggle?.addEventListener('click', () => {
-  if (_isPropsCollapsed()) {
-    _propsPinnedCollapsed = false;
-  } else {
-    _propsPinnedCollapsed = true;
-  }
-  _syncPropsPanel();
-});
-
-btnObToggle?.addEventListener('click', () => {
-  _obPinnedCollapsed = !_obPinnedCollapsed;
-  _syncObjectBrowserPanel();
+btnSidebarToggle?.addEventListener('click', () => {
+  _sidebarCollapsed = !_sidebarCollapsed;
+  _syncSidebar();
 });
 
 renderer.onSelect(_onSandboxSelect);
@@ -576,6 +549,12 @@ let appMode   = 'setup';
 let _sceneBaseline = null;
 /** @type {{ type: 'blank'|'file', name: string }|null} */
 let _sceneSource = null;
+
+function _syncTimelineVisibility() {
+  const hasFrames = recorder.frameCount > 0;
+  timelineBar?.classList.toggle('collapsed', !hasFrames);
+  timelineBar?.setAttribute('aria-hidden', String(!hasFrames));
+}
 
 function setMode(mode) {
   appMode = mode;
@@ -608,6 +587,8 @@ function setMode(mode) {
   if (hasFrames) {
     tlScrubber.max = recorder.frameCount - 1;
   }
+
+  _syncTimelineVisibility();
 
   // Play-review button icon
   _updateReviewPlayIcon();
@@ -659,11 +640,12 @@ engine.onStep(simTime => {
   if (recorder.isRecording) {
     recorder.capture(simTime, engine.bodies, engine.constraints);
     // Trail length only advances with recorded frames (not every RAF tick).
-    if (btnTraces.classList.contains('active')) {
+    if (envTracesToggle?.checked) {
       renderer.sampleTraces(engine.bodies);
     }
     recFramesEl.textContent = recorder.frameCount;
     tlClearFrames.disabled = false;
+    _syncTimelineVisibility();
     // Keep scrubber range and fill updated as frames accumulate
     _updateScrubberFromLive();
     _syncGraphs();
@@ -672,7 +654,7 @@ engine.onStep(simTime => {
 
 /** Rebuild trajectory trails from footage up to the given review frame. */
 function _syncReviewTraces(frameIdx = playback.frameIndex) {
-  if (!btnTraces.classList.contains('active')) return;
+  if (!envTracesToggle?.checked) return;
   renderer.setTracesFromFrames(recorder.frames, frameIdx);
 }
 
@@ -701,10 +683,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     // Prefer graph home when the pointer is over a plot.
     if (graphHost.resetHoveredView()) return;
-    const scale = (typeof _sceneBaseline?.camera?.s === 'number' && Number.isFinite(_sceneBaseline.camera.s))
-      ? _sceneBaseline.camera.s
-      : DEFAULT_CAMERA_SCALE;
-    _frameMetricBasis(scale);
+    _frameMetricBasis();
     if (interaction.mode === 'camera') cameraOverlay.sync();
     return;
   }
@@ -905,7 +884,6 @@ function _applyHistorySnapshot(snapshot) {
     objectBrowser?.setSelection({ type: 'measurement', id: selMeasure });
     props.show({ type: 'measurement', id: selMeasure });
     objectBrowser?.scheduleRefresh();
-    _syncPropsPanel();
     return;
   }
   if (selLabelId && labels.getById(selLabelId)) {
@@ -913,7 +891,6 @@ function _applyHistorySnapshot(snapshot) {
     objectBrowser?.setSelection({ type: 'label', id: selLabelId });
     props.show({ type: 'label', id: selLabelId });
     objectBrowser?.scheduleRefresh();
-    _syncPropsPanel();
     return;
   }
   if (selLabel) {
@@ -924,14 +901,12 @@ function _applyHistorySnapshot(snapshot) {
       props.show(_currentSelection);
       objectBrowser?.setSelection(_currentSelection);
       objectBrowser?.scheduleRefresh();
-      _syncPropsPanel();
       return;
     }
   }
   props.show(null);
   objectBrowser?.setSelection(null);
   objectBrowser?.scheduleRefresh();
-  _syncPropsPanel();
 }
 
 function _toggleCaptureSession() {
@@ -949,7 +924,7 @@ function _toggleCaptureSession() {
     if (recorder.frameCount === 0) {
       recorder.capture(engine.simTime, engine.bodies, engine.constraints);
       recFramesEl.textContent = recorder.frameCount;
-      if (btnTraces.classList.contains('active')) {
+      if (envTracesToggle?.checked) {
         renderer.sampleTraces(engine.bodies);
       }
     }
@@ -1122,9 +1097,9 @@ async function _withExportUiHidden(fn) {
 
 /** Apply toolbar view toggles to the renderer before export. */
 function _syncExportViewToggles() {
-  renderer.setShowGrid(btnGrid.classList.contains('active'));
-  renderer.setShowVectors(btnVectors.classList.contains('active'));
-  const traces = btnTraces.classList.contains('active');
+  renderer.setShowGrid(!!envGridToggle?.checked);
+  renderer.setShowVectors(!!envVectorsToggle?.checked);
+  const traces = !!envTracesToggle?.checked;
   renderer.setShowTraces(traces);
   if (traces) {
     renderer.setTracesFromFrames(recorder.frames, playback.frameIndex);
@@ -1468,9 +1443,9 @@ btnExportSvg?.addEventListener('click', () => {
   const svgStr = exportAnimatedSVG(recorder.frames, {
     width:       size.width,
     height:      size.height,
-    showGrid:    btnGrid.classList.contains('active'),
-    showTraces:  btnTraces.classList.contains('active'),
-    showVectors: btnVectors.classList.contains('active'),
+    showGrid:    !!envGridToggle?.checked,
+    showTraces:  !!envTracesToggle?.checked,
+    showVectors: !!envVectorsToggle?.checked,
   });
   downloadSVG(svgStr, 'inertia-animation.svg');
 });
@@ -1507,30 +1482,8 @@ btnVideoExportRun?.addEventListener('click', async () => {
   }
 });
 
-// ── View toggles ──────────────────────────────────────────────────
-btnGrid.addEventListener('click', () => {
-  renderer.setShowGrid(btnGrid.classList.toggle('active'));
-});
-btnSnap.addEventListener('click', () => {
-  _snapEnabled = btnSnap.classList.toggle('active');
-  interaction.setSnapEnabled(_snapEnabled);
-});
-btnOrigin?.addEventListener('click', () => {
-  const on = btnOrigin.classList.toggle('active');
-  btnOrigin.setAttribute('aria-pressed', String(on));
-  renderer.setShowMetricOrigin(on);
-  interaction.setMetricOriginSelectable(on);
-  // Drop selection if the hidden origin was selected
-  if (!on && _currentSelection?.type === 'body') {
-    const b = engine.bodies.find(x => x.id === _currentSelection.id);
-    if (b?._newtonType === 'metric-basis') _onSandboxSelect(null);
-  }
-});
-btnVectors.addEventListener('click', () => {
-  renderer.setShowVectors(btnVectors.classList.toggle('active'));
-});
-btnTraces.addEventListener('click', () => {
-  const on = btnTraces.classList.toggle('active');
+// ── View toggles (settings) ───────────────────────────────────────
+function _applyTracesToggle(on) {
   renderer.setShowTraces(on);
   if (!on) {
     renderer.clearTraces();
@@ -1544,10 +1497,44 @@ btnTraces.addEventListener('click', () => {
   } else {
     renderer.clearTraces();
   }
+}
+
+function _applyOriginToggle(on) {
+  renderer.setShowMetricOrigin(on);
+  interaction.setMetricOriginSelectable(on);
+  if (!on && _currentSelection?.type === 'body') {
+    const b = engine.bodies.find(x => x.id === _currentSelection.id);
+    if (b?._newtonType === 'metric-basis') _onSandboxSelect(null);
+  }
+}
+
+envGridToggle?.addEventListener('change', () => {
+  renderer.setShowGrid(!!envGridToggle.checked);
+});
+envSnapToggle?.addEventListener('change', () => {
+  _snapEnabled = !!envSnapToggle.checked;
+  interaction.setSnapEnabled(_snapEnabled);
+});
+envOriginToggle?.addEventListener('change', () => {
+  _applyOriginToggle(!!envOriginToggle.checked);
+});
+envVectorsToggle?.addEventListener('change', () => {
+  renderer.setShowVectors(!!envVectorsToggle.checked);
+});
+envTracesToggle?.addEventListener('change', () => {
+  _applyTracesToggle(!!envTracesToggle.checked);
 });
 
 // ── Interaction / selection ───────────────────────────────────────
 const interaction = new InteractionHandler(svg, engine, _onSandboxSelect, camera, renderer.interactionGhostLayer);
+
+// Initial view state from settings defaults
+_snapEnabled = !!envSnapToggle?.checked;
+interaction.setSnapEnabled(_snapEnabled);
+renderer.setShowGrid(!!envGridToggle?.checked);
+renderer.setShowVectors(!!envVectorsToggle?.checked);
+_applyTracesToggle(!!envTracesToggle?.checked);
+_applyOriginToggle(!!envOriginToggle?.checked);
 
 function _overlayPoint(e) {
   const rect = cameraOverlaySvg.getBoundingClientRect();
@@ -1637,6 +1624,9 @@ cameraOverlaySvg?.addEventListener('wheel', e => {
 
 window.addEventListener('resize', () => {
   _syncCameraOverlaySize();
+  if (appMode === 'setup' && interaction.mode !== 'camera') {
+    _frameMetricBasis();
+  }
   if (interaction.mode === 'camera') cameraOverlay.sync();
 });
 interaction.measurements = measurements;
@@ -2326,18 +2316,18 @@ function _onSelHandleDocMove(e) {
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('pointer-events', 'none');
       const line = document.createElementNS(SVG_NS, 'line');
-      line.setAttribute('stroke', '#2980b9');
+      line.setAttribute('stroke', '#2d70b3');
       line.setAttribute('stroke-width', '1.25');
       line.setAttribute('stroke-dasharray', '5 4');
       line.setAttribute('opacity', '0.85');
       const tip = document.createElementNS(SVG_NS, 'circle');
       tip.setAttribute('r', c._newtonType === 'spring' ? '3.5' : '5');
-      tip.setAttribute('fill', '#2980b9');
+      tip.setAttribute('fill', '#2d70b3');
       tip.setAttribute('stroke', '#fff');
       tip.setAttribute('stroke-width', '1.25');
       tip.setAttribute('opacity', '0.95');
       const lbl = document.createElementNS(SVG_NS, 'text');
-      lbl.setAttribute('fill', '#2980b9');
+      lbl.setAttribute('fill', '#2d70b3');
       lbl.setAttribute('font-size', '11');
       lbl.setAttribute('font-family', FONT_DIAGRAM);
       g.appendChild(line);
@@ -2389,7 +2379,7 @@ function _onSelHandleDocMove(e) {
     if (!_selHandleGhost) {
       _selHandleGhost = document.createElementNS(SVG_NS, 'circle');
       _selHandleGhost.setAttribute('r', c._newtonType === 'spring' ? '3.5' : '5');
-      _selHandleGhost.setAttribute('fill', '#2980b9');
+      _selHandleGhost.setAttribute('fill', '#2d70b3');
       _selHandleGhost.setAttribute('stroke', '#fff');
       _selHandleGhost.setAttribute('stroke-width', '1.25');
       _selHandleGhost.setAttribute('opacity', '0.55');
@@ -2432,7 +2422,7 @@ function _onSelHandleDocMove(e) {
     if (!_selHandleGhost) {
       _selHandleGhost = document.createElementNS(SVG_NS, 'circle');
       _selHandleGhost.setAttribute('r', '5');
-      _selHandleGhost.setAttribute('fill', '#2980b9');
+      _selHandleGhost.setAttribute('fill', '#2d70b3');
       _selHandleGhost.setAttribute('stroke', '#fff');
       _selHandleGhost.setAttribute('stroke-width', '1.5');
       _selHandleGhost.setAttribute('opacity', '0.55');
@@ -2609,7 +2599,7 @@ function _onGroundHandleDown(e) {
   _pushHistory();
   _selHandleDrag = { kind: 'ground', bodyId, moving: end, fix, _Lw: { ...L }, _Rw: { ...R } };
   _selHandleGhost = document.createElementNS(SVG_NS, 'line');
-  _selHandleGhost.setAttribute('stroke', '#2980b9');
+  _selHandleGhost.setAttribute('stroke', '#2d70b3');
   _selHandleGhost.setAttribute('stroke-width', '2');
   _selHandleGhost.setAttribute('stroke-dasharray', '5 4');
   _selHandleGhost.setAttribute('pointer-events', 'none');
@@ -2636,7 +2626,7 @@ function _buildSelHandles(key) {
       if (!body) continue; // free ends are not shown / not editable
       const circ = document.createElementNS(SVG_NS, 'circle');
       circ.setAttribute('r', r);
-      circ.setAttribute('fill', '#2980b9');
+      circ.setAttribute('fill', '#2d70b3');
       circ.setAttribute('stroke', '#fff');
       circ.setAttribute('stroke-width', strokeW);
       // Stretch handles: axis-aligned resize cursor, reattach: crosshair
@@ -2660,7 +2650,7 @@ function _buildSelHandles(key) {
     for (const end of ['A', 'B']) {
       const circ = document.createElementNS(SVG_NS, 'circle');
       circ.setAttribute('r', '5');
-      circ.setAttribute('fill', '#2980b9');
+      circ.setAttribute('fill', '#2d70b3');
       circ.setAttribute('stroke', '#fff');
       circ.setAttribute('stroke-width', '1.5');
       circ.setAttribute('cursor', 'crosshair');
@@ -2675,7 +2665,7 @@ function _buildSelHandles(key) {
     for (const end of ['L', 'R']) {
       const circ = document.createElementNS(SVG_NS, 'circle');
       circ.setAttribute('r', '7');
-      circ.setAttribute('fill', '#2980b9');
+      circ.setAttribute('fill', '#2d70b3');
       circ.setAttribute('stroke', '#fff');
       circ.setAttribute('stroke-width', '2');
       circ.setAttribute('cursor', 'crosshair');
@@ -2829,7 +2819,7 @@ function _buildScaleHandles(key) {
   const mkHandle = (edge, cursor) => {
     const circ = document.createElementNS(SVG_NS, 'circle');
     circ.setAttribute('r', '6');
-    circ.setAttribute('fill', '#2980b9');
+    circ.setAttribute('fill', '#2d70b3');
     circ.setAttribute('stroke', '#fff');
     circ.setAttribute('stroke-width', '1.5');
     circ.setAttribute('cursor', cursor);
@@ -3138,8 +3128,9 @@ function _updateSceneResetButton() {
   btnSceneReset.disabled = !hasBaseline;
   const name = _sceneSource?.name ?? 'saved setup';
   const label = hasBaseline
-    ? `Reset to last saved (“${name}”)`
-    : 'Reset scene';
+    ? `Reset to “${name}”`
+    : 'Reset to last saved setup';
+  btnSceneReset.textContent = label;
   btnSceneReset.title = label;
   btnSceneReset.setAttribute('aria-label', label);
 }
@@ -3245,7 +3236,6 @@ function _clearSelectionAfterLoad() {
   props.clear();
   objectBrowser.setSelection(null);
   objectBrowser.refresh();
-  _syncPropsPanel();
 }
 
 /**
@@ -3292,10 +3282,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
       _applyCameraRig();
     });
   } else {
-    const scale = (typeof camDoc?.s === 'number' && Number.isFinite(camDoc.s)) ? camDoc.s : DEFAULT_CAMERA_SCALE;
-    _frameMetricBasisWhenReady(scale, 0, () => {
-      const { width, height } = _viewSize();
-      cameraRig.syncFromCamera(camera, width, height);
+    _frameMetricBasisWhenReady(0, () => {
       _syncCameraOverlaySize();
     });
   }
@@ -3401,11 +3388,6 @@ btnPresetMenu?.addEventListener('click', e => {
   _togglePresetMenu();
 });
 
-btnSceneNew?.addEventListener('click', () => {
-  _closePresetMenu();
-  _loadBlankScene();
-});
-
 btnSceneLoad?.addEventListener('click', () => {
   _closePresetMenu();
   _importSceneJSON();
@@ -3417,10 +3399,12 @@ btnSceneSave?.addEventListener('click', () => {
 });
 
 btnSceneReset?.addEventListener('click', () => {
+  _closePresetMenu();
   _resetScene();
 });
 
 btnSceneClear?.addEventListener('click', () => {
+  _closePresetMenu();
   _clearEntireScene();
 });
 
@@ -3560,7 +3544,6 @@ document.querySelectorAll('.obj-btn[data-drag-place]').forEach(btn => {
       _currentSelection = { type: 'body', id: body.id };
       renderer.select([body.id]);
       props.show(_currentSelection);
-      _syncPropsPanel();
     }
   });
 
@@ -3592,12 +3575,13 @@ function _viewLaidOut() {
   return w >= 2 && h >= 2;
 }
 
-/** Pan + zoom so the metric basis sits at the centre of the simulator view. */
-function _frameMetricBasis(scale = DEFAULT_CAMERA_SCALE) {
+/** Pan + zoom so the metric basis sits at the centre with a grid-aligned viewport fit. */
+function _frameMetricBasis() {
   const { width: vw, height: vh } = _viewSize();
   const origin = getMetricOriginWorldPx();
   if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return;
-  camera.centerOnWorld(origin.x, origin.y, vw, vh, scale);
+  cameraRig.fitGridToViewport(vw, vh, origin.x, origin.y);
+  cameraRig.applyToCamera(camera, vw, vh);
   renderer.syncMetricOrigin();
 }
 
@@ -3605,13 +3589,13 @@ function _frameMetricBasis(scale = DEFAULT_CAMERA_SCALE) {
  * Frame the metric origin once the canvas has a real size.
  * Avoids locking the camera to the 800×600 fallback before layout.
  */
-function _frameMetricBasisWhenReady(scale = DEFAULT_CAMERA_SCALE, attempt = 0, onReady = null) {
+function _frameMetricBasisWhenReady(attempt = 0, onReady = null) {
   if (_viewLaidOut() || attempt >= 60) {
-    _frameMetricBasis(scale);
+    _frameMetricBasis();
     onReady?.();
     return;
   }
-  requestAnimationFrame(() => _frameMetricBasisWhenReady(scale, attempt + 1, onReady));
+  requestAnimationFrame(() => _frameMetricBasisWhenReady(attempt + 1, onReady));
 }
 
 function _whenViewReady(fn, attempt = 0) {

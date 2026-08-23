@@ -40,8 +40,8 @@ const STYLE = {
   springWidth:   1.05,
   springCoils:   8,
   springAmpl:    7.5,
-  gridColor:     '#e8e6e0',
-  gridColorMajor:'#d0cec8',
+  gridColor:     '#ebebeb',
+  gridColorMajor:'#d4d4d4',
   gridMinor:     10,   // 0.1 m at 100 px/m
   gridMajor:     100,  // 1 m at 100 px/m
   traceColor:    COLORS.ink,
@@ -51,7 +51,7 @@ const STYLE = {
   /** Ignore contacts with negligible relative slip when classifying kinetic direction (m/s). */
   frictionSlipEpsMs:    1e-4,
   // Velocity (kinematic, not a force): same world scale as the v₀ handle
-  velColor:      '#2980b9',
+  velColor:      '#2d70b3',
   vectorMinLen:  6,
   /** Min time a force/velocity label keeps its side before re-picking. */
   vectorLabelHoldMs: 550,
@@ -605,7 +605,7 @@ export class SvgRenderer {
         class: 'body-shape wedge-body wedge-ring',
       }));
     } else if (type === 'anchor') {
-      // Triangle with pivot circle at the apex (body.position)
+      // Inverted triangle on pivot circle at body.position
       g.removeAttribute('transform'); // anchor uses absolute coords
       this._drawAnchor(g, x, y);
       return;
@@ -635,16 +635,17 @@ export class SvgRenderer {
   }
 
   _drawAnchor(g, x, y) {
+    const r = 4;
     const size = 14;
     const triH = size * 1.4;
-    // Upward triangle, hinge at bottom apex = physics pivot (x, y).
+    // Inverted triangle above pivot circle; hinge at circle centre (x, y).
     g.appendChild(el('polygon', {
-      points: `${x},${y} ${x - size},${y - triH} ${x + size},${y - triH}`,
+      points: `${x},${y - r} ${x - size},${y - r - triH} ${x + size},${y - r - triH}`,
       fill: 'none', stroke: STYLE.ink, 'stroke-width': 2,
       class: 'body-shape',
     }));
     g.appendChild(el('circle', {
-      cx: x, cy: y, r: 4,
+      cx: x, cy: y, r,
       fill: '#fff', stroke: STYLE.ink, 'stroke-width': 2,
     }));
   }

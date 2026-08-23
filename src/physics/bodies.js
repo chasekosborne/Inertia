@@ -796,8 +796,8 @@ export function createWedge(x, y, opts = {}) {
 }
 
 /**
- * Create a static pivot anchor: triangle with pivot circle at the apex
- * (body.position = constraint attachment).
+ * Create a static pivot anchor: inverted triangle on a pivot circle
+ * (body.position = circle centre = constraint attachment).
  */
 export function createAnchor(x, y) {
   const body = Bodies.circle(x, y, 6, {

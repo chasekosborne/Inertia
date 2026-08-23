@@ -1941,7 +1941,7 @@ export class MeasurementManager {
       const t = el('text', {
         x: p.x + 6,
         y: p.y - 4,
-        fill: coupleKind === 'force' ? '#c0392b' : '#2980b9',
+        fill: coupleKind === 'force' ? '#c0392b' : '#2d70b3',
         'font-size': 9,
         'font-family': FONT_DIAGRAM,
         'font-style': 'italic',

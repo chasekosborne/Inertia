@@ -155,14 +155,14 @@ export function buildDesmosViewPayload(series, fitResult, opts = {}) {
         {
           latex: 'x_1',
           values: xs.map(latexNum),
-          color: '#2563a8',
+          color: '#2d70b3',
           points: true,
           lines: false,
         },
         {
           latex: 'y_1',
           values: ys.map(latexNum),
-          color: '#2563a8',
+          color: '#2d70b3',
           points: true,
           lines: true,
         },

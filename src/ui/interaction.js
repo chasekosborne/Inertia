@@ -844,7 +844,7 @@ export class InteractionHandler {
       if (hover) {
         this._ghostLayer.appendChild(svgEl('circle', {
           cx: bx, cy: by, r: 5,
-          fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+          fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
         }));
       }
 
@@ -1216,7 +1216,7 @@ export class InteractionHandler {
     }));
     this._ghostLayer.appendChild(svgEl('circle', {
       cx: ax, cy: ay, r: 3.5,
-      fill: '#2980b9',
+      fill: '#2d70b3',
       stroke: '#fff',
       'stroke-width': 1,
     }));
@@ -1352,13 +1352,13 @@ export class InteractionHandler {
     if (this._ropeStart?.attach) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ax, cy: ay, r: 5,
-        fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+        fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
       }));
     }
     if (endAttach) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ex, cy: ey, r: 5,
-        fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+        fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
       }));
     }
     const txt = svgEl('text', {

@@ -19,12 +19,13 @@ export const FONT_DIAGRAM = FONT_MATH;
 
 export const COLORS = {
   /** Diagram ink: soft off-black (slightly gray, not pure #000 / #1a1a1a). */
-  ink: '#2e2e2e',
-  inkLight: '#5c6370',
-  blue: '#2563a8',
+  ink: '#333333',
+  inkLight: '#666666',
+  /** Desmos-style saturated royal blue. */
+  blue: '#2d70b3',
   /** Fitted curve overlay on graphs. */
   fit: '#a63d2f',
-  paper: '#fffefb',
+  paper: '#ffffff',
   /** Sweep scatter: overall max / min Y markers. */
   sweepMax: '#b8860b',
   sweepMin: '#2a6f6f',

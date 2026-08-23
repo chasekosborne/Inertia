@@ -8,9 +8,17 @@ import { displayedMToWorldPx, worldPxToDisplayedM } from '../world-origin.js';
 
 const MIN_VIEW_PX = 40;
 
-/** Default framed world extent (px): ~2 m × 1.5 m at {@link PX_PER_M}. */
-export const DEFAULT_VIEW_WIDTH_PX = 200;
-export const DEFAULT_VIEW_HEIGHT_PX = 150;
+/** Major grid spacing in world px (1 m at {@link PX_PER_M}). */
+export const GRID_MAJOR_PX = PX_PER_M;
+
+/** Default whole major cells shown along the long viewport axis. */
+export const DEFAULT_GRID_CELLS_LONG = 7;
+export const DEFAULT_GRID_CELLS_SHORT = 5;
+export const DEFAULT_VIEW_PADDING_PX = 36;
+
+/** Default framed world extent (px): ~7 m × 5 m at {@link PX_PER_M}. */
+export const DEFAULT_VIEW_WIDTH_PX = DEFAULT_GRID_CELLS_LONG * GRID_MAJOR_PX;
+export const DEFAULT_VIEW_HEIGHT_PX = DEFAULT_GRID_CELLS_SHORT * GRID_MAJOR_PX;
 
 export class CameraRig {
   constructor() {
@@ -31,6 +39,33 @@ export class CameraRig {
   /** Width ÷ height of the framed world bounds. */
   aspectRatio() {
     return this.viewWidth / Math.max(1, this.viewHeight);
+  }
+
+  /**
+   * Frame a whole-number major grid extent to fit the viewport (metric origin centred).
+   * @param {number} viewW
+   * @param {number} viewH
+   * @param {number} centerX world px
+   * @param {number} centerY world px
+   * @param {number} [paddingPx]
+   */
+  fitGridToViewport(viewW, viewH, centerX, centerY, paddingPx = DEFAULT_VIEW_PADDING_PX) {
+    const innerW = Math.max(MIN_VIEW_PX, viewW - paddingPx * 2);
+    const innerH = Math.max(MIN_VIEW_PX, viewH - paddingPx * 2);
+    const aspect = innerW / innerH;
+    let cellsW;
+    let cellsH;
+    if (aspect >= 1) {
+      cellsW = DEFAULT_GRID_CELLS_LONG;
+      cellsH = Math.max(DEFAULT_GRID_CELLS_SHORT, Math.ceil(cellsW / aspect));
+    } else {
+      cellsH = DEFAULT_GRID_CELLS_LONG;
+      cellsW = Math.max(DEFAULT_GRID_CELLS_SHORT, Math.ceil(cellsH * aspect));
+    }
+    this.centerX = centerX;
+    this.centerY = centerY;
+    this.viewWidth = cellsW * GRID_MAJOR_PX;
+    this.viewHeight = cellsH * GRID_MAJOR_PX;
   }
 
   /**

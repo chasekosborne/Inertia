@@ -4,9 +4,7 @@ import { PhysicsEngine }    from './physics/engine.js';
 import { SvgRenderer }      from './renderer/svg-renderer.js';
 import { Recorder }         from './recorder/recorder.js';
 import { Playback }         from './recorder/playback.js';
-import { exportAnimatedSVG, downloadSVG } from './exporter/svg-exporter.js';
-import { exportRecordingVideo, downloadVideosSequentially, videoExportSupported, recordingDurationSec, sampleExportFrameIndices } from './exporter/mp4-exporter.js';
-import { graphExportDimensions, GRAPH_ASPECT_OPTIONS } from './exporter/graph-video.js';
+import { ExportControls }   from './exporter/export-controls.js';
 import { PropertiesPanel }  from './ui/properties.js';
 import { ObjectBrowser }    from './ui/object-browser.js';
 import { GraphHost }        from './ui/graph-panel.js';
@@ -88,23 +86,6 @@ const btnSnap       = document.getElementById('btn-snap');
 const btnOrigin     = document.getElementById('btn-origin');
 const btnVectors    = document.getElementById('btn-vectors');
 const btnTraces     = document.getElementById('btn-traces');
-const btnExportSvg  = document.getElementById('btn-export-svg');
-const btnExportMp4  = document.getElementById('btn-export-mp4');
-const videoExportBackdrop = document.getElementById('video-export-backdrop');
-const btnVideoExportClose = document.getElementById('btn-video-export-close');
-const btnVideoExportCancel = document.getElementById('btn-video-export-cancel');
-const btnVideoExportRun = document.getElementById('btn-video-export-run');
-const videoExportPreset = document.getElementById('video-export-preset');
-const videoExportSize = document.getElementById('video-export-size');
-const videoExportFps = document.getElementById('video-export-fps');
-const videoExportFilename = document.getElementById('video-export-filename');
-const videoExportFrameCount = document.getElementById('video-export-frame-count');
-const videoExportIncludeSim = document.getElementById('video-export-include-sim');
-const videoExportSimPanel = document.getElementById('video-export-sim-panel');
-const videoExportIncludeGraphs = document.getElementById('video-export-include-graphs');
-const videoExportGraphPanel = document.getElementById('video-export-graph-panel');
-const videoExportGraphList = document.getElementById('video-export-graph-list');
-const videoExportGraphEmpty = document.getElementById('video-export-graph-empty');
 const btnAddGraph   = document.getElementById('btn-add-graph');
 const iconPlay      = document.getElementById('icon-play');
 const iconPause     = document.getElementById('icon-pause');
@@ -288,7 +269,25 @@ btnAddGraph?.addEventListener('click', () => {
   // Prefer vertical position for textbook-style plots (e.g. rock air-drag).
   seed.observable = 'y';
   graphHost.addGraph(seed);
-  _syncExportButtons();
+  exportControls.syncButtons();
+});
+
+/** Toolbar export buttons + the video-export dialog. */
+const exportControls = new ExportControls({
+  engine, recorder, playback, renderer, graphHost, cameraRig, camera, svg,
+  get labels() { return labels; },
+  get measurements() { return measurements; },
+  enterReview:    () => _enterReview(),
+  closeMenu:      () => _closePresetMenu(),
+  applyCameraRig: () => _applyCameraRig(),
+  getViewSize:    () => _viewSize(),
+  getViewToggles: () => ({
+    grid:    btnGrid.classList.contains('active'),
+    vectors: btnVectors.classList.contains('active'),
+    traces:  btnTraces.classList.contains('active'),
+  }),
+  getStatus: () => statusMode.innerHTML,
+  setStatus: (html) => { statusMode.innerHTML = html; },
 });
 
 // ── Undo / redo history ───────────────────────────────────────────
@@ -888,7 +887,7 @@ function _toggleCaptureSession() {
     engine.pause();
     recorder.stop();
     statusRec.classList.add('hidden');
-    _syncExportButtons();
+    exportControls.syncButtons();
     setMode('setup');
   } else {
     if (appMode === 'review') playback.stop();
@@ -901,7 +900,7 @@ function _toggleCaptureSession() {
       }
     }
     statusRec.classList.remove('hidden');
-    _syncExportButtons(true);
+    exportControls.syncButtons(true);
     if (!engine.running) engine.play();
     setMode('live');
   }
@@ -928,7 +927,7 @@ function _toggleReviewPlay() {
     if (recorder.isRecording) {
       recorder.stop();
       statusRec.classList.add('hidden');
-      _syncExportButtons();
+      exportControls.syncButtons();
     }
     if (engine.running) engine.pause();
     _updateMainTransportButton();
@@ -970,8 +969,7 @@ tlClearFrames.addEventListener('click', () => {
   _updateFill(0);
   tlFrameCount.textContent  = '0 fr';
   tlTimeDisplay.textContent = '0.000 s';
-  if (btnExportSvg) btnExportSvg.disabled = true;
-  btnExportMp4.disabled = true;
+  exportControls.syncButtons(true);
   setMode('setup');
   _syncGraphs(true);
 });
@@ -1003,7 +1001,7 @@ function _enterReview() {
     if (recorder.isRecording) {
       recorder.stop();
       statusRec.classList.add('hidden');
-      _syncExportButtons();
+      exportControls.syncButtons();
     }
     if (engine.running) engine.pause();
     _updateMainTransportButton();
@@ -1028,430 +1026,6 @@ speedSlider.addEventListener('input', () => {
   const v = parseFloat(speedSlider.value);
   engine.setSpeed(v);
   speedLabel.textContent = `${v.toFixed(1)}×`;
-});
-
-// ── Export ────────────────────────────────────────────────────────
-let _videoExportOk = false;
-let _exportBusy = false;
-
-videoExportSupported().then(ok => {
-  _videoExportOk = ok;
-  if (!ok && btnExportMp4) {
-    btnExportMp4.title = 'Video export requires WebCodecs or MediaRecorder';
-  }
-  _syncExportButtons();
-});
-
-/** @param {boolean} [forceDisable] */
-function _syncExportButtons(forceDisable = false) {
-  const hasFrames = !forceDisable && recorder.frameCount > 0 && !_exportBusy;
-  const hasGraphExport = !forceDisable && graphHost.listVideoExportCandidates().length > 0 && !_exportBusy;
-  // SVG export UI is hidden for now; keep the exporter module for later.
-  if (btnExportSvg) btnExportSvg.disabled = true;
-  if (btnExportMp4) btnExportMp4.disabled = (!hasFrames && !hasGraphExport) || !_videoExportOk || _exportBusy;
-}
-
-/** @param {() => Promise<void>} fn */
-async function _withExportUiHidden(fn) {
-  const hidden = [];
-  for (const layer of [renderer.uiTopLayer, renderer.interactionGhostLayer]) {
-    if (layer && layer.style.display !== 'none') {
-      hidden.push(layer);
-      layer.style.display = 'none';
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    for (const layer of hidden) layer.style.display = '';
-  }
-}
-
-/** Apply toolbar view toggles to the renderer before export. */
-function _syncExportViewToggles() {
-  renderer.setShowGrid(btnGrid.classList.contains('active'));
-  renderer.setShowVectors(btnVectors.classList.contains('active'));
-  const traces = btnTraces.classList.contains('active');
-  renderer.setShowTraces(traces);
-  if (traces) {
-    renderer.setTracesFromFrames(recorder.frames, playback.frameIndex);
-  } else {
-    renderer.clearTraces();
-  }
-}
-
-function _updateVideoExportFrameCount() {
-  if (!videoExportFrameCount) return;
-  const n = recorder.frameCount;
-  if (n <= 0) {
-    videoExportFrameCount.textContent = '0';
-    return;
-  }
-  const dur = recordingDurationSec(recorder.frames);
-  const fps = Math.max(1, Math.min(120, parseInt(videoExportFps?.value ?? '60', 10) || 60));
-  const { outputFrames } = sampleExportFrameIndices(recorder.frames, fps);
-  videoExportFrameCount.textContent =
-    `${outputFrames} export frames from ${n} recorded (${dur.toFixed(3)} s sim time @ ${fps} fps)`;
-}
-
-function _openVideoExportDialog() {
-  _closePresetMenu();
-  if (videoExportPreset) videoExportPreset.value = '1080p';
-  _applyVideoExportPreset();
-  graphHost.prepareVideoExport();
-  _updateVideoExportFrameCount();
-  const hasFrames = recorder.frameCount > 0;
-  const summaries = graphHost.getVideoExportSummaries();
-  const exportableGraphs = summaries.filter(s => s.canExport);
-  if (videoExportIncludeSim) {
-    videoExportIncludeSim.checked = hasFrames;
-    videoExportIncludeSim.disabled = !hasFrames;
-  }
-  if (videoExportSimPanel) videoExportSimPanel.classList.toggle('hidden', !videoExportIncludeSim?.checked);
-  if (videoExportIncludeGraphs) {
-    videoExportIncludeGraphs.checked = exportableGraphs.length > 0;
-    videoExportIncludeGraphs.disabled = summaries.length === 0;
-  }
-  _rebuildGraphExportList();
-  _syncVideoExportPanels();
-  videoExportBackdrop?.classList.remove('hidden');
-  videoExportBackdrop?.setAttribute('aria-hidden', 'false');
-}
-
-function _syncVideoExportPanels() {
-  if (videoExportSimPanel) {
-    videoExportSimPanel.classList.toggle('hidden', !videoExportIncludeSim?.checked);
-  }
-  if (videoExportGraphPanel) {
-    videoExportGraphPanel.classList.toggle('hidden', !videoExportIncludeGraphs?.checked);
-  }
-  if (btnVideoExportRun) {
-    const sim = !!videoExportIncludeSim?.checked;
-    const graphs = !!videoExportIncludeGraphs?.checked
-      && !!videoExportGraphList?.querySelector('.graph-export-row:not(.is-disabled) input[type="checkbox"]:checked');
-    btnVideoExportRun.disabled = !sim && !graphs;
-  }
-}
-
-function _rebuildGraphExportList() {
-  if (!videoExportGraphList) return;
-  videoExportGraphList.innerHTML = '';
-  const summaries = graphHost.getVideoExportSummaries();
-  if (videoExportGraphEmpty) {
-    videoExportGraphEmpty.classList.toggle('hidden', summaries.length > 0);
-  }
-  for (const s of summaries) {
-    const row = document.createElement('div');
-    row.className = 'graph-export-row' + (s.canExport ? '' : ' is-disabled');
-    row.dataset.exportId = String(s.id);
-
-    const head = document.createElement('div');
-    head.className = 'graph-export-row-head';
-    const includeLabel = document.createElement('label');
-    const includeCb = document.createElement('input');
-    includeCb.type = 'checkbox';
-    includeCb.checked = s.canExport;
-    includeCb.disabled = !s.canExport;
-    includeCb.dataset.role = 'include';
-    const titleWrap = document.createElement('span');
-    titleWrap.className = 'graph-export-row-title';
-    titleWrap.textContent = s.title;
-    if (!s.canExport && s.reason) {
-      const note = document.createElement('span');
-      note.className = 'graph-export-row-note';
-      note.textContent = s.reason;
-      titleWrap.appendChild(document.createElement('br'));
-      titleWrap.appendChild(note);
-    }
-    includeLabel.append(includeCb, titleWrap);
-    head.appendChild(includeLabel);
-    row.appendChild(head);
-
-    const settings = document.createElement('div');
-    settings.className = 'graph-export-settings';
-
-    const aspectLabel = document.createElement('span');
-    aspectLabel.className = 'prop-label';
-    aspectLabel.textContent = 'Aspect';
-    const aspectSel = document.createElement('select');
-    aspectSel.className = 'prop-value';
-    aspectSel.dataset.role = 'aspect';
-    for (const opt of GRAPH_ASPECT_OPTIONS) {
-      const o = document.createElement('option');
-      o.value = opt.id;
-      o.textContent = opt.label;
-      aspectSel.appendChild(o);
-    }
-    aspectSel.value = s.plotAspect >= 1.2 ? '16:9' : s.plotAspect >= 0.95 ? '4:3' : '9:16';
-
-    const presetLabel = document.createElement('span');
-    presetLabel.className = 'prop-label';
-    presetLabel.textContent = 'Resolution';
-    const presetSel = document.createElement('select');
-    presetSel.className = 'prop-value';
-    presetSel.dataset.role = 'preset';
-    for (const [val, label] of [['720p', '720p'], ['1080p', '1080p'], ['1440p', '1440p'], ['4k', '4K']]) {
-      const o = document.createElement('option');
-      o.value = val;
-      o.textContent = label;
-      if (val === '1080p') o.selected = true;
-      presetSel.appendChild(o);
-    }
-
-    const sizeLabel = document.createElement('span');
-    sizeLabel.className = 'prop-label';
-    sizeLabel.textContent = 'Output';
-    const sizeReadout = document.createElement('span');
-    sizeReadout.className = 'export-size-readout';
-    sizeReadout.dataset.role = 'size';
-
-    const fpsLabel = document.createElement('span');
-    fpsLabel.className = 'prop-label';
-    fpsLabel.textContent = 'Frame rate';
-    const fpsSel = document.createElement('select');
-    fpsSel.className = 'prop-value';
-    fpsSel.dataset.role = 'fps';
-    for (const [val, label] of [['24', '24 fps'], ['30', '30 fps'], ['60', '60 fps']]) {
-      const o = document.createElement('option');
-      o.value = val;
-      o.textContent = label;
-      if (val === '60') o.selected = true;
-      fpsSel.appendChild(o);
-    }
-
-    const animLabel = document.createElement('span');
-    animLabel.className = 'prop-label';
-    animLabel.textContent = 'Animation';
-    const animSel = document.createElement('select');
-    animSel.className = 'prop-value';
-    animSel.dataset.role = 'anim';
-    for (const [val, label] of [
-      ['draw', 'Draw progressively'],
-      ['playback', 'Playback (dot on path)'],
-    ]) {
-      const o = document.createElement('option');
-      o.value = val;
-      o.textContent = label;
-      animSel.appendChild(o);
-    }
-
-    const syncSize = () => {
-      const { label } = graphExportDimensions(
-        /** @type {import('./exporter/graph-video.js').GraphResolutionPreset} */ (presetSel.value),
-        /** @type {import('./exporter/graph-video.js').GraphAspectPreset} */ (aspectSel.value),
-        s.plotAspect,
-      );
-      sizeReadout.textContent = label;
-    };
-    aspectSel.addEventListener('change', syncSize);
-    presetSel.addEventListener('change', syncSize);
-    includeCb.addEventListener('change', () => _syncVideoExportPanels());
-    syncSize();
-
-    settings.append(
-      aspectLabel, aspectSel,
-      presetLabel, presetSel,
-      sizeLabel, sizeReadout,
-      fpsLabel, fpsSel,
-      animLabel, animSel,
-    );
-    row.appendChild(settings);
-    if (!s.canExport) {
-      for (const el of settings.querySelectorAll('select')) el.disabled = true;
-    }
-    videoExportGraphList.appendChild(row);
-  }
-}
-
-function _readGraphExportEntries() {
-  if (!videoExportIncludeGraphs?.checked || !videoExportGraphList) return [];
-  /** @type {object[]} */
-  const entries = [];
-  for (const row of videoExportGraphList.querySelectorAll('.graph-export-row')) {
-    const include = row.querySelector('input[data-role="include"]');
-    if (!include?.checked || row.classList.contains('is-disabled')) continue;
-    const exportId = Number(row.dataset.exportId);
-    const win = graphHost.findByExportId(exportId);
-    if (!win) continue;
-    const aspect = row.querySelector('select[data-role="aspect"]')?.value ?? '16:9';
-    const preset = row.querySelector('select[data-role="preset"]')?.value ?? '1080p';
-    const fps = Math.max(1, Math.min(120, parseInt(row.querySelector('select[data-role="fps"]')?.value ?? '60', 10) || 60));
-    const animMode = row.querySelector('select[data-role="anim"]')?.value === 'playback' ? 'playback' : 'draw';
-    const { width, height } = graphExportDimensions(
-      /** @type {import('./exporter/graph-video.js').GraphResolutionPreset} */ (preset),
-      /** @type {import('./exporter/graph-video.js').GraphAspectPreset} */ (aspect),
-      win.getPlotAspect(),
-    );
-    entries.push({ win, width, height, fps, animMode, preset, aspect });
-  }
-  return entries;
-}
-
-function _closeVideoExportDialog() {
-  videoExportBackdrop?.classList.add('hidden');
-  videoExportBackdrop?.setAttribute('aria-hidden', 'true');
-}
-
-function _applyVideoExportPreset() {
-  const preset = videoExportPreset?.value ?? '1080p';
-  const { label } = cameraRig.exportDimensionsForPreset(preset);
-  if (videoExportSize) videoExportSize.textContent = label;
-}
-
-function _readVideoExportOptions() {
-  const preset = videoExportPreset?.value ?? '1080p';
-  const { width, height } = cameraRig.exportDimensionsForPreset(preset);
-  const fps = Math.max(1, Math.min(120, parseInt(videoExportFps?.value ?? '60', 10) || 60));
-  const baseName = String(videoExportFilename?.value ?? 'inertia-recording').trim() || 'inertia-recording';
-  return {
-    includeSim: !!videoExportIncludeSim?.checked,
-    includeGraphs: !!videoExportIncludeGraphs?.checked,
-    width,
-    height,
-    fps,
-    baseName: baseName.replace(/\.(mp4|webm)$/i, ''),
-    graphs: _readGraphExportEntries(),
-  };
-}
-
-async function _runGraphVideoExports(graphEntries, baseName, prevModeText) {
-  const frames = recorder.frames;
-  /** @type {Array<{ blob: Blob, filename: string }>} */
-  const downloads = [];
-  let n = 0;
-  for (const entry of graphEntries) {
-    n += 1;
-    statusMode.innerHTML = `Exporting: <strong>Graph ${n}/${graphEntries.length}</strong>`;
-    entry.win.refresh();
-    const { blob, filename: outName } = await entry.win.exportVideo({
-      frames,
-      width: entry.width,
-      height: entry.height,
-      fps: entry.fps,
-      animMode: entry.animMode,
-      onProgress: (done, total) => {
-        statusMode.innerHTML = `Exporting: <strong>Graph ${n}/${graphEntries.length} · ${done}/${total}</strong>`;
-      },
-    });
-    const ext = outName.split('.').pop() ?? (blob.type.includes('webm') ? 'webm' : 'mp4');
-    downloads.push({
-      blob,
-      filename: `${entry.win.exportFilename(baseName)}.${ext}`,
-    });
-  }
-  return downloads;
-}
-
-async function _runBatchVideoExport(opts) {
-  if (_exportBusy) return;
-  _exportBusy = true;
-  _syncExportButtons();
-  if (btnVideoExportRun) btnVideoExportRun.disabled = true;
-
-  const prevModeText = statusMode.innerHTML;
-  const savedIdx = playback.frameIndex;
-  playback.stop();
-
-  /** @type {Array<{ blob: Blob, filename: string }>} */
-  const downloads = [];
-
-  try {
-    if (opts.includeSim) {
-      playback.jumpToStart();
-      _enterReview();
-      _syncExportViewToggles();
-      cameraRig.applyToCamera(camera, opts.width, opts.height);
-      statusMode.innerHTML = 'Exporting: <strong>Simulation…</strong>';
-      const { blob, filename: outName } = await _withExportUiHidden(() => exportRecordingVideo(recorder.frames, {
-        svg: svg,
-        width: opts.width,
-        height: opts.height,
-        fps: opts.fps,
-        onProgress: (done, total) => {
-          statusMode.innerHTML = `Exporting: <strong>Simulation ${done}/${total}</strong>`;
-        },
-        renderFrame: async (i) => {
-          playback.seek(i);
-          if (cameraRig.followBodyId) cameraRig.updateFollow(engine);
-          cameraRig.applyToCamera(camera, opts.width, opts.height);
-          renderer.render();
-          labels.sync();
-          measurements.sync();
-          await new Promise(r => requestAnimationFrame(r));
-        },
-      }));
-      const ext = outName.split('.').pop() ?? (blob.type.includes('webm') ? 'webm' : 'mp4');
-      downloads.push({
-        blob,
-        filename: `${opts.baseName}-simulation.${ext}`,
-      });
-    }
-
-    if (opts.includeGraphs && opts.graphs.length) {
-      const graphDownloads = await _runGraphVideoExports(opts.graphs, opts.baseName, prevModeText);
-      downloads.push(...graphDownloads);
-    }
-
-    if (downloads.length) {
-      statusMode.innerHTML = `Downloading: <strong>${downloads.length} file${downloads.length === 1 ? '' : 's'}…</strong>`;
-      await downloadVideosSequentially(downloads);
-    }
-  } finally {
-    playback.seek(savedIdx);
-    renderer.render();
-    measurements.sync();
-    _applyCameraRig();
-    statusMode.innerHTML = prevModeText;
-    _exportBusy = false;
-    if (btnVideoExportRun) btnVideoExportRun.disabled = false;
-    _syncExportButtons();
-  }
-}
-
-btnExportSvg?.addEventListener('click', () => {
-  _closePresetMenu();
-  if (btnExportSvg.disabled) return;
-  const size   = _viewSize();
-  const svgStr = exportAnimatedSVG(recorder.frames, {
-    width:       size.width,
-    height:      size.height,
-    showGrid:    btnGrid.classList.contains('active'),
-    showTraces:  btnTraces.classList.contains('active'),
-    showVectors: btnVectors.classList.contains('active'),
-  });
-  downloadSVG(svgStr, 'inertia-animation.svg');
-});
-
-btnExportMp4?.addEventListener('click', () => {
-  _closePresetMenu();
-  if (btnExportMp4.disabled || _exportBusy) return;
-  _openVideoExportDialog();
-});
-
-videoExportPreset?.addEventListener('change', _applyVideoExportPreset);
-videoExportFps?.addEventListener('change', _updateVideoExportFrameCount);
-
-videoExportIncludeSim?.addEventListener('change', _syncVideoExportPanels);
-videoExportIncludeGraphs?.addEventListener('change', _syncVideoExportPanels);
-
-btnVideoExportClose?.addEventListener('click', _closeVideoExportDialog);
-btnVideoExportCancel?.addEventListener('click', _closeVideoExportDialog);
-
-videoExportBackdrop?.addEventListener('click', e => {
-  if (e.target === videoExportBackdrop) _closeVideoExportDialog();
-});
-
-btnVideoExportRun?.addEventListener('click', async () => {
-  if (btnVideoExportRun.disabled || _exportBusy) return;
-  const opts = _readVideoExportOptions();
-  if (!opts.includeSim && (!opts.includeGraphs || !opts.graphs.length)) return;
-  _closeVideoExportDialog();
-  try {
-    await _runBatchVideoExport(opts);
-  } catch (err) {
-    console.error(err);
-    window.alert(err instanceof Error ? err.message : 'Video export failed.');
-  }
 });
 
 // ── View toggles ──────────────────────────────────────────────────
@@ -1973,8 +1547,7 @@ function _finishSceneLoad(source) {
   tlFrameCount.textContent  = '0 fr';
   tlTimeDisplay.textContent = '0.000 s';
   simTimeEl.textContent     = 't = 0.000 s';
-  if (btnExportSvg) btnExportSvg.disabled = true;
-  btnExportMp4.disabled = true;
+  exportControls.syncButtons(true);
   setMode('setup');
   _updateMainTransportButton();
   _updateSceneResetButton();

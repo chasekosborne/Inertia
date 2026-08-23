@@ -28,4 +28,6 @@ export const COLORS = {
   /** Sweep scatter: overall max / min Y markers. */
   sweepMax: '#b8860b',
   sweepMin: '#2a6f6f',
+  vel: '#2980b9',
+  force: '#c0392b',
 };

@@ -37,4 +37,8 @@ function demoScenesPlugin() {
 
 export default defineConfig({
   plugins: [demoScenesPlugin()],
+  test: {
+    environment: 'node',
+    include: ['tests/**/*.test.js'],
+  },
 });

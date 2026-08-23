@@ -112,15 +112,11 @@ const renderer = new SvgRenderer(svg, engine);
 const camera   = new Camera();
 const cameraRig = new CameraRig();
 camera.attach(renderer.worldGroup);
-const cameraOverlay = new CameraOverlay(cameraOverlaySvg, camera, cameraRig);
-
-function _syncCameraOverlaySize() {
-  const { width, height } = _viewSize();
-  if (!cameraOverlaySvg || width < 2) return;
-  cameraOverlaySvg.setAttribute('width', String(width));
-  cameraOverlaySvg.setAttribute('height', String(height));
-  cameraOverlaySvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-}
+const cameraOverlay = new CameraOverlay(cameraOverlaySvg, camera, cameraRig, {
+  getToolMode: () => interaction.mode,
+  getViewSize: () => _viewSize(),
+  onFrameChanged: () => props.showCamera(cameraRig, _onCameraRigChanged),
+});
 
 function _applyCameraRig({ fitView = true } = {}) {
   const { width, height } = _viewSize();
@@ -548,7 +544,7 @@ function renderLoop() {
     if (cameraRig.followBodyId && (engine.running || appMode === 'review')) {
       cameraRig.updateFollow(engine);
     }
-    _syncCameraOverlaySize();
+    cameraOverlay.syncSize();
     cameraOverlay.sync();
   } else if (cameraRig.followBodyId && (engine.running || appMode === 'review')) {
     cameraRig.updateFollow(engine);
@@ -1068,94 +1064,8 @@ const vectorHandle = new VectorHandle(editorContext);
 /** Constraint / rope / ground grab dots for whatever is selected. */
 const editHandles = new EditHandles(editorContext);
 
-function _overlayPoint(e) {
-  const rect = cameraOverlaySvg.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-}
-
-/** View pan while in camera mode (distinct from frame-handle drags). */
-let _cameraViewPanning = false;
-
-function _endCameraViewPan() {
-  if (!_cameraViewPanning) return;
-  _cameraViewPanning = false;
-  camera.endPan();
-  cameraOverlaySvg?.classList.remove('camera-pan-active');
-}
-
-cameraOverlaySvg?.addEventListener('pointerdown', e => {
-  if (interaction.mode !== 'camera') return;
-  const pt = _overlayPoint(e);
-
-  // Shift+drag or middle-button drag pans the view, frame handles edit the export bounds.
-  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
-    _endCameraViewPan();
-    camera.beginPan(pt.x, pt.y);
-    _cameraViewPanning = true;
-    cameraOverlaySvg.classList.add('camera-pan-active');
-    cameraOverlaySvg.setPointerCapture(e.pointerId);
-    e.preventDefault();
-    return;
-  }
-
-  if (e.button !== 0) return;
-
-  const mode = cameraOverlay.hitHandle(pt.x, pt.y);
-  if (mode) {
-    _endCameraViewPan();
-    cameraOverlay.beginDrag(mode, pt.x, pt.y);
-    cameraOverlaySvg.setPointerCapture(e.pointerId);
-    e.preventDefault();
-    return;
-  }
-
-  // Outside the frame: drag to pan the view.
-  _endCameraViewPan();
-  camera.beginPan(pt.x, pt.y);
-  _cameraViewPanning = true;
-  cameraOverlaySvg.classList.add('camera-pan-active');
-  cameraOverlaySvg.setPointerCapture(e.pointerId);
-  e.preventDefault();
-});
-
-cameraOverlaySvg?.addEventListener('pointermove', e => {
-  const pt = _overlayPoint(e);
-  if (_cameraViewPanning) {
-    camera.movePan(pt.x, pt.y);
-    cameraOverlay.sync();
-    return;
-  }
-  if (!cameraOverlay.isDragging) return;
-  cameraOverlay.moveDrag(pt.x, pt.y);
-});
-
-cameraOverlaySvg?.addEventListener('pointerup', () => {
-  const wasFrameDrag = cameraOverlay.isDragging;
-  cameraOverlay.endDrag();
-  _endCameraViewPan();
-  if (wasFrameDrag && interaction.mode === 'camera') {
-    props.showCamera(cameraRig, _onCameraRigChanged);
-  }
-});
-cameraOverlaySvg?.addEventListener('pointercancel', () => {
-  const wasFrameDrag = cameraOverlay.isDragging;
-  cameraOverlay.endDrag();
-  _endCameraViewPan();
-  if (wasFrameDrag && interaction.mode === 'camera') {
-    props.showCamera(cameraRig, _onCameraRigChanged);
-  }
-});
-
-cameraOverlaySvg?.addEventListener('wheel', e => {
-  if (interaction.mode !== 'camera') return;
-  e.preventDefault();
-  const pt = _overlayPoint(e);
-  camera.onWheel(pt.x, pt.y, e.deltaY);
-  cameraOverlay.sync();
-}, { passive: false });
-
 window.addEventListener('resize', () => {
-  _syncCameraOverlaySize();
+  cameraOverlay.syncSize();
   if (interaction.mode === 'camera') cameraOverlay.sync();
 });
 interaction.measurements = measurements;
@@ -1166,7 +1076,7 @@ interaction.onBeforeDrag = _pushHistory;
 interaction.getSetupSelection = () => (appMode === 'setup' ? _currentSelection : null);
 interaction.onTempPanPreview = (active) => {
   document.body.classList.toggle('shift-pan-preview', active);
-  cameraOverlaySvg?.classList.toggle('camera-pan-ready', active && interaction.mode === 'camera');
+  cameraOverlay.setPanReady(active);
 };
 
 document.addEventListener('keydown', e => {
@@ -1356,7 +1266,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
   if (camDoc?.center) {
     cameraRig.loadFromSceneDoc(camDoc, bodyByLabel);
     _whenViewReady(() => {
-      _syncCameraOverlaySize();
+      cameraOverlay.syncSize();
       _applyCameraRig();
     });
   } else {
@@ -1364,7 +1274,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
     _frameMetricBasisWhenReady(scale, 0, () => {
       const { width, height } = _viewSize();
       cameraRig.syncFromCamera(camera, width, height);
-      _syncCameraOverlaySize();
+      cameraOverlay.syncSize();
     });
   }
 
@@ -1473,14 +1383,12 @@ function _activateTool(tool, label) {
   if (tool === 'camera') {
     _onSandboxSelect(null);
     // Keep the existing export frame: only user drags / property edits reframe it.
-    _syncCameraOverlaySize();
+    cameraOverlay.syncSize();
     cameraOverlay.setActive(true);
     cameraOverlay.sync();
     props.showCamera(cameraRig, _onCameraRigChanged);
   } else {
     cameraOverlay.setActive(false);
-    _endCameraViewPan();
-    cameraOverlaySvg?.classList.remove('camera-pan-ready', 'camera-pan-active');
   }
 }
 

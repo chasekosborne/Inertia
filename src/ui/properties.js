@@ -10,6 +10,7 @@ import Matter from 'matter-js';
 import {
   setMaterialFriction, createGround, scaleBoxTo, scaleCircleTo, scaleWedgeTo, setWedgeGeometry,
   defaultWedgeFootAngle, clampWedgeFootAngle, wedgeAABBCenterWorld, setWedgeAABBCenter,
+  snapWedgeToGrid,
   setBodyAnchored, setBodyMass, bodyDisplayMass, applyCircleInertia,
 } from '../physics/bodies.js';
 import { setAppliedForce, clearAppliedForce, getAppliedForce } from '../physics/applied-force.js';
@@ -26,7 +27,7 @@ import {
   ropeSelection, ropeDisplayName, renameRope, getRopeEndAttachment,
 } from '../physics/rope.js';
 import { aggregateState, bodyDisplayName } from '../scene/aggregates.js';
-import { snapWorldCoord, snapVelocityToGrid } from '../grid.js';
+import { snapWorldCoord, snapVelocityToGrid, snapBodySizePx } from '../grid.js';
 import { displayedMToWorldPx, worldPxToDisplayedM } from '../world-origin.js';
 import {
   PX_PER_M,
@@ -66,12 +67,88 @@ export class PropertiesPanel {
     this._onFocusedBodyChange = onFocusedBodyChange;
     this._getSnapEnabled = getSnapEnabled;
     this._measurementHooks = measurementHooks;
+    this._pushArmed = false;
+
+    // Enter commits the focused property field.
+    this.panel.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement)) return;
+      if (t.type === 'checkbox' || t.type === 'radio' || t.type === 'button' || t.type === 'file') return;
+      e.preventDefault();
+      // Fire change explicitly so Enter commits even when blur alone would not
+      // (value equal to the pre-focus string after reformatting, etc.).
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+      t.blur();
+    });
   }
 
   /** Notify caller that a mutation is about to happen. */
-  _push() { this._beforeChange?.(); }
+  _push() {
+    // Coalesce duplicate change events (Enter often fires change + blur change).
+    if (this._pushArmed) return;
+    this._pushArmed = true;
+    try { this._beforeChange?.(); }
+    finally { queueMicrotask(() => { this._pushArmed = false; }); }
+  }
 
   _snapOn() { return this._getSnapEnabled?.() ?? false; }
+
+  /** Non-negative number from an input or raw string; empty/invalid → 0. */
+  _parseNonNeg(elOrValue) {
+    const raw = (typeof elOrValue === 'object' && elOrValue != null && 'value' in elOrValue)
+      ? elOrValue.value
+      : elOrValue;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+
+  /**
+   * Apply μs / μk from the panel. Lowering either side clamps the other so
+   * μs ≥ μk, and both may be zero (frictionless ground / body).
+   * @param {import('matter-js').Body|import('matter-js').Body[]} bodies
+   * @param {'mus'|'muk'} which
+   * @param {number} value
+   */
+  _applyFrictionEdit(bodies, which, value) {
+    const list = Array.isArray(bodies) ? bodies : [bodies];
+    const body0 = list.find(Boolean);
+    if (!body0) return;
+    let muK = body0._muK ?? body0.friction ?? 0;
+    let muS = body0._muS ?? body0.frictionStatic ?? muK;
+    if (!Number.isFinite(muK)) muK = 0;
+    if (!Number.isFinite(muS)) muS = 0;
+    const v = Number.isFinite(value) ? Math.max(0, value) : 0;
+    if (which === 'mus') {
+      muS = v;
+      if (muK > muS) muK = muS;
+    } else {
+      muK = v;
+      if (muS < muK) muS = muK;
+    }
+    for (const b of list) {
+      if (b) setMaterialFriction(b, muK, muS);
+    }
+    const musEl = this.panel.querySelector('#prop-mus');
+    const mukEl = this.panel.querySelector('#prop-muk');
+    if (musEl) musEl.value = muS.toFixed(3);
+    if (mukEl) mukEl.value = muK.toFixed(3);
+  }
+
+  /**
+   * Wire μs / μk inputs for one body or a list (rope segments).
+   * @param {() => (import('matter-js').Body|import('matter-js').Body[]|null|undefined)} getBodies
+   */
+  _bindFrictionInputs(getBodies) {
+    const run = (which) => (e) => {
+      const bodies = getBodies();
+      if (!bodies || (Array.isArray(bodies) && !bodies.length)) return;
+      this._push();
+      this._applyFrictionEdit(bodies, which, this._parseNonNeg(e.target));
+    };
+    this.panel.querySelector('#prop-mus')?.addEventListener('change', run('mus'));
+    this.panel.querySelector('#prop-muk')?.addEventListener('change', run('muk'));
+  }
 
   /** Checkbox row: Anchored = Matter static (no gravity / no impulse to this body). */
   _anchoredRowHtml(body) {
@@ -110,7 +187,7 @@ export class PropertiesPanel {
 
   /** Human label for a welded component type. */
   _partTypeLabel(type) {
-    if (type === 'point-mass') return 'Circle';
+    if (type === 'point-mass') return 'Point';
     if (type === 'ball') return 'Ball';
     if (type === 'box') return 'Box';
     if (type === 'wedge') return 'Wedge';
@@ -648,8 +725,21 @@ export class PropertiesPanel {
         <span class="prop-label">Placement</span>
         <span class="prop-value" style="opacity:0.85">${placement}</span>
       </div>
+      <div class="prop-row">
+        <span class="prop-label">Visible</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="prop-label-visible" ${l.visible !== false ? 'checked' : ''}/>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
       ${anchorRows}
     `;
+
+    this.panel.querySelector('#prop-label-visible')?.addEventListener('change', e => {
+      this._push();
+      mgr.setVisible(l.id, !!e.target.checked);
+      this._measurementHooks?.onChanged?.();
+    });
   }
 
   /**
@@ -815,7 +905,7 @@ export class PropertiesPanel {
     const nt = body._newtonType;
     if (nt === 'metric-basis') this._buildMetricBasisPanel(body);
     else if (nt === 'point-mass') this._buildRoundBodyPanel(body, {
-      title: 'Circle',
+      title: 'Point',
       defaultRadiusM: DEFAULT_CIRCLE_RADIUS_M,
       showHollow: true,
     });
@@ -1181,24 +1271,7 @@ export class PropertiesPanel {
         applyCircleInertia(body);
       });
     }
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      setMaterialFriction(body, body._muK ?? body.friction, v);
-      // Ensure μs ≥ μk (physical requirement)
-      const mukEl = this.panel.querySelector('#prop-muk');
-      if (mukEl && v < parseFloat(mukEl.value)) mukEl.value = v.toFixed(3);
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curMuS = body._muS ?? body.frictionStatic ?? v;
-      // Ensure μk ≤ μs
-      const newMuS = Math.max(v, curMuS);
-      setMaterialFriction(body, v, newMuS);
-      const musEl = this.panel.querySelector('#prop-mus');
-      if (musEl) musEl.value = newMuS.toFixed(3);
-    });
+    this._bindFrictionInputs(() => body);
   }
 
   /** Polar + Cartesian v₀ editors (projectile UI), only modifies linear velocity: no geometry. */
@@ -1400,27 +1473,7 @@ export class PropertiesPanel {
       this._push();
       g.restitution = parseFloat(e.target.value);
     });
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      const g = this._groundBody();
-      if (!g) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curK = g._muK ?? g.friction;
-      setMaterialFriction(g, curK, Math.max(curK, v));
-      const mukEl = this.panel.querySelector('#prop-muk');
-      if (mukEl && v < parseFloat(mukEl.value)) mukEl.value = v.toFixed(3);
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      const g = this._groundBody();
-      if (!g) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curS = g._muS ?? g.frictionStatic ?? v;
-      const newMuS = Math.max(v, curS);
-      setMaterialFriction(g, v, newMuS);
-      const musEl = this.panel.querySelector('#prop-mus');
-      if (musEl) musEl.value = newMuS.toFixed(3);
-    });
+    this._bindFrictionInputs(() => this._groundBody());
 
     this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
       const g = this._groundBody();
@@ -1608,8 +1661,8 @@ export class PropertiesPanel {
       const n = clampRopeSegments(parseFloat(this.panel.querySelector('#prop-rope-segs')?.value) || nSeg);
       const mass = Math.max(0.05, parseFloat(this.panel.querySelector('#prop-rope-mass')?.value) || totalMass);
       const thick = Math.max(0.02, parseFloat(this.panel.querySelector('#prop-rope-thick')?.value) || thickM);
-      const muk = Math.max(0, parseFloat(this.panel.querySelector('#prop-muk')?.value) || 0);
-      const mus = Math.max(muk, parseFloat(this.panel.querySelector('#prop-mus')?.value) || 0);
+      const muk = this._parseNonNeg(this.panel.querySelector('#prop-muk'));
+      const mus = Math.max(muk, this._parseNonNeg(this.panel.querySelector('#prop-mus')));
       const nameNow = String(this.panel.querySelector('#prop-rope-name')?.value ?? '').trim() || name;
       const result = rebuildRope(this.engine, ropeId, {
         segments: n,
@@ -1637,26 +1690,7 @@ export class PropertiesPanel {
     this.panel.querySelector('#prop-rope-thick')?.addEventListener('change', rebuildFromPanel);
     this.panel.querySelector('#prop-rope-mass')?.addEventListener('change', rebuildFromPanel);
 
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const muk = Math.max(0, parseFloat(this.panel.querySelector('#prop-muk')?.value) || 0);
-      const muS = Math.max(v, muk);
-      for (const s of listRopeSegments(this.engine, ropeId)) {
-        setMaterialFriction(s, muk, muS);
-      }
-      e.target.value = muS.toFixed(3);
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const musEl = this.panel.querySelector('#prop-mus');
-      const curS = Math.max(v, parseFloat(musEl?.value) || 0);
-      for (const s of listRopeSegments(this.engine, ropeId)) {
-        setMaterialFriction(s, v, curS);
-      }
-      if (musEl) musEl.value = curS.toFixed(3);
-    });
+    this._bindFrictionInputs(() => listRopeSegments(this.engine, ropeId));
 
     this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
       this._push();
@@ -1776,14 +1810,14 @@ export class PropertiesPanel {
       const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
       if (!b) return;
       this._push();
-      const nw = mToPx(parseFloat(e.target.value));
+      const nw = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
       const nh = b._height ?? 40;
       this._scaleBoxTo(b, nw, nh);
     });
     this.panel.querySelector('#prop-box-h')?.addEventListener('change', e => {
       const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
       if (!b) return;
-      const nh = mToPx(parseFloat(e.target.value));
+      const nh = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
       const nw = b._width ?? 40;
       this._push();
       this._scaleBoxTo(b, nw, nh);
@@ -1801,27 +1835,8 @@ export class PropertiesPanel {
       this._push();
       b.restitution = parseFloat(e.target.value);
     });
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curK = b._muK ?? b.friction;
-      setMaterialFriction(b, curK, Math.max(curK, v));
-      const mukEl = this.panel.querySelector('#prop-muk');
-      if (mukEl && v < parseFloat(mukEl.value)) mukEl.value = v.toFixed(3);
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curS = b._muS ?? b.frictionStatic ?? v;
-      const newMuS = Math.max(v, curS);
-      setMaterialFriction(b, v, newMuS);
-      const musEl = this.panel.querySelector('#prop-mus');
-      if (musEl) musEl.value = newMuS.toFixed(3);
-    });
+    this._bindFrictionInputs(() =>
+      this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box'));
 
     this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
       const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
@@ -1925,7 +1940,8 @@ export class PropertiesPanel {
       const cur = wedgeAABBCenterWorld(b);
       const { xm, ym } = worldPxToDisplayedM(cur.x, cur.y);
       const { x: xPx, y: yKeep } = displayedMToWorldPx(parseFloat(e.target.value), ym);
-      setWedgeAABBCenter(b, snapWorldCoord(xPx, this._snapOn()), snapWorldCoord(yKeep, this._snapOn()));
+      setWedgeAABBCenter(b, xPx, yKeep);
+      snapWedgeToGrid(b, this._snapOn());
     });
     this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
       const b = findW(); if (!b) return;
@@ -1933,17 +1949,22 @@ export class PropertiesPanel {
       const cur = wedgeAABBCenterWorld(b);
       const { xm, ym } = worldPxToDisplayedM(cur.x, cur.y);
       const { x: xKeep, y: yPx } = displayedMToWorldPx(xm, parseFloat(e.target.value));
-      setWedgeAABBCenter(b, snapWorldCoord(xKeep, this._snapOn()), snapWorldCoord(yPx, this._snapOn()));
+      setWedgeAABBCenter(b, xKeep, yPx);
+      snapWedgeToGrid(b, this._snapOn());
     });
     this.panel.querySelector('#prop-wedge-w')?.addEventListener('change', e => {
       const b = findW(); if (!b) return;
       this._push();
-      scaleWedgeTo(b, mToPx(parseFloat(e.target.value)), b._height ?? 40, { pin: 'left' });
+      const W = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
+      scaleWedgeTo(b, W, b._height ?? 40, { pin: 'left' });
+      snapWedgeToGrid(b, this._snapOn());
     });
     this.panel.querySelector('#prop-wedge-h')?.addEventListener('change', e => {
       const b = findW(); if (!b) return;
       this._push();
-      scaleWedgeTo(b, b._baseWidth ?? 40, mToPx(parseFloat(e.target.value)), { pin: 'bottom' });
+      const H = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
+      scaleWedgeTo(b, b._baseWidth ?? 40, H, { pin: 'bottom' });
+      snapWedgeToGrid(b, this._snapOn());
     });
     this.panel.querySelector('#prop-wedge-foot')?.addEventListener('change', e => {
       const b = findW(); if (!b) return;
@@ -1965,19 +1986,7 @@ export class PropertiesPanel {
       this._push();
       b.restitution = parseFloat(e.target.value);
     });
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      setMaterialFriction(b, b._muK ?? b.friction, Math.max(b._muK ?? b.friction, v));
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curS = b._muS ?? b.frictionStatic ?? v;
-      setMaterialFriction(b, v, Math.max(v, curS));
-    });
+    this._bindFrictionInputs(findW);
     this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
       const b = findW(); if (!b) return;
       this._push();
@@ -2043,20 +2052,7 @@ export class PropertiesPanel {
       this._push();
       body.restitution = parseFloat(e.target.value);
     });
-    this.panel.querySelector('#prop-mus')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curK = body._muK ?? body.friction;
-      setMaterialFriction(body, curK, Math.max(curK, v));
-    });
-    this.panel.querySelector('#prop-muk')?.addEventListener('change', e => {
-      this._push();
-      const v = Math.max(0, parseFloat(e.target.value));
-      const curS = body._muS ?? body.frictionStatic ?? v;
-      setMaterialFriction(body, v, Math.max(v, curS));
-      const musEl = this.panel.querySelector('#prop-mus');
-      if (musEl) musEl.value = Math.max(v, curS).toFixed(3);
-    });
+    this._bindFrictionInputs(() => body);
     this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
       this._push();
       this.engine.removeBody(body);

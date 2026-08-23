@@ -57,6 +57,8 @@ export function serializeScene(engine, opts = {}) {
           baseWidth: (b._baseWidth ?? 40) / PX_PER_M,
           height: (b._height ?? 40) / PX_PER_M,
         };
+        if (b._wedgeFlipX === true) entry.geometry.flipX = true;
+        if (b._wedgeFlipY === true) entry.geometry.flipY = true;
       } else if (b._newtonType === 'ground') {
         entry.geometry = {
           width: (b._width ?? 400) / PX_PER_M,

@@ -168,6 +168,19 @@ function applyTangentImpulse(body, tx, ty, P, rCrossT) {
   }
 }
 
+function recordFrictionVis(body, tx, ty, kinetic, cos, muK, muS, F_load_t, P) {
+  if (!body) return;
+  body._fricVis = {
+    tx, ty,
+    kinetic: !!kinetic,
+    cos,
+    muK,
+    muS,
+    F_load_t,
+    P,
+  };
+}
+
 /**
  * Post-collision Coulomb friction (call from engine `afterUpdate`).
  * @param {import('matter-js').Body[]} bodies
@@ -192,6 +205,7 @@ export function applyCoulombFriction(bodies, gravity) {
     list[i]._fricRestHold = false;
     list[i]._fricRestOther = null;
     list[i]._fricLastP = 0;
+    list[i]._fricVis = null;
   }
 
   for (let i = 0; i < n; i++) {
@@ -207,8 +221,12 @@ export function applyCoulombFriction(bodies, gravity) {
       const other = dyn === A ? B : A;
       if (dyn.isStatic) continue;
 
+      // Round bodies always use geometric rim contact (even with lockRotation).
+      // Gating on canRoll() alone sent locked balls through SAT, which skips /
+      // chatters so Coulomb friction never grips after a projectile lands.
       const rolling = canRoll(dyn);
-      const geo = rolling ? circleContact(dyn, other) : null;
+      const useCircle = isRoundBody(dyn) && !dyn._ropeSegment;
+      const geo = useCircle ? circleContact(dyn, other) : null;
       const col = geo ? null : Collision.collides(A, B);
       if (geo) {
         if (!(geo.depth > -SOLID_CONTACT_DEPTH_PX)) continue;
@@ -340,6 +358,7 @@ export function applyCoulombFriction(bodies, gravity) {
             applyTangentImpulse(other, tx, ty, -P, canRoll(other) ? rCrossTO : null);
           }
           dyn._fricLastP = P;
+          recordFrictionVis(dyn, tx, ty, !canStatic, cos, muK, muS, F_load_t, P);
           applied = true;
         }
       } else {
@@ -368,6 +387,7 @@ export function applyCoulombFriction(bodies, gravity) {
           dyn._fricRestNy = ny;
           dyn._fricRestOther = other;
           dyn._fricLastP = P_hold;
+          recordFrictionVis(dyn, tx, ty, false, cos, muK, muS, F_load_t, P_hold);
           P = 0;
           applied = true;
         } else if (canStatic) {
@@ -388,6 +408,7 @@ export function applyCoulombFriction(bodies, gravity) {
             applyTangentImpulse(other, tx, ty, -P, null);
           }
           dyn._fricLastP = P;
+          recordFrictionVis(dyn, tx, ty, !canStatic, cos, muK, muS, F_load_t, P);
           applied = true;
         }
 

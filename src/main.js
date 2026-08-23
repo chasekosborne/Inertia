@@ -21,6 +21,9 @@ import {
   downloadSceneJSON,
   pickAndLoadSceneFile,
   validateSceneDocument,
+  captureSelectionClipboard,
+  pasteClipboard,
+  PASTE_OFFSET_M,
 } from './scene/index.js';
 import {
   removeRope, ropeSelection, setRopeEndAttachment, getRopeEndAttachment,
@@ -34,9 +37,9 @@ import { FONT_DIAGRAM, COLORS } from './theme.js';
 import { createPointMass, createBall, createBox, createWedge, scaleBoxTo, scaleCircleTo,
          scaleWedgeTo, wedgeScaleHandleLocal, clampWedgeFootAngle,
          wedgeAABBCenterWorld, setWedgeAABBCenter, worldToWedgeAABBLocal,
-         wedgeTriangleWorldVerts } from './physics/bodies.js';
+         wedgeTriangleWorldVerts, wedgeFlipFlags } from './physics/bodies.js';
 import { snapWorldCoord, snapSegmentFromStart, snapVelocityToAngle, snapAngleRad,
-         SNAP_ANGLE_STEP_5_DEG, VELOCITY_SNAP_MS } from './grid.js';
+         snapBodySizePx, SNAP_ANGLE_STEP_5_DEG, VELOCITY_SNAP_MS } from './grid.js';
 import {
   constraintAnchorWorld,
   setConstraintEndAttachment,
@@ -91,6 +94,8 @@ const btnSceneLoad  = document.getElementById('btn-scene-load');
 const btnSceneSave  = document.getElementById('btn-scene-save');
 const btnSceneNew   = document.getElementById('btn-scene-new');
 const btnSceneReset = document.getElementById('btn-scene-reset');
+const btnSceneClear = document.getElementById('btn-scene-clear');
+const toolbarToast  = document.getElementById('toolbar-toast');
 const btnSettings   = document.getElementById('btn-settings');
 const settingsBackdrop = document.getElementById('settings-backdrop');
 const btnSettingsClose = document.getElementById('btn-settings-close');
@@ -690,7 +695,8 @@ playback.onChange((frameIdx, event) => {
 btnPlayPause.addEventListener('click', () => _toggleCaptureSession());
 
 document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.target.isContentEditable) return;
   if (e.code === 'Digit0' || e.code === 'Numpad0') {
     e.preventDefault();
     // Prefer graph home when the pointer is over a plot.
@@ -713,6 +719,21 @@ document.addEventListener('keydown', e => {
       (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
     e.preventDefault();
     _doRedo();
+    return;
+  }
+  // Copy / paste selected objects (setup mode)
+  if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+    if (_copySelection()) e.preventDefault();
+    return;
+  }
+  if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+    if (_pasteSelection()) e.preventDefault();
+    return;
+  }
+  // Save checkpoint for Reset (Ctrl/Cmd+S)
+  if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+    e.preventDefault();
+    _saveSceneCheckpoint();
     return;
   }
   if (e.code === 'Space') {
@@ -752,6 +773,80 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Undo / redo operations ────────────────────────────────────────
+
+/** @type {{ bodies: object[], constraints: object[], uiAggregates?: object[] }|null} */
+let _objectClipboard = null;
+/** Paste-stack offset multiplier (resets on new copy). */
+let _pasteGeneration = 0;
+
+function _copySelection() {
+  if (appMode !== 'setup') return false;
+  if (interaction.mode === 'camera') return false;
+  const frag = captureSelectionClipboard(engine, _currentSelection);
+  if (!frag) return false;
+  _objectClipboard = frag;
+  _pasteGeneration = 0;
+  return true;
+}
+
+function _pasteSelection() {
+  if (appMode !== 'setup') return false;
+  if (interaction.mode === 'camera') return false;
+  if (!_objectClipboard?.bodies?.length) return false;
+
+  _pasteGeneration += 1;
+  const n = _pasteGeneration;
+  _pushHistory();
+  const result = pasteClipboard(engine, _objectClipboard, {
+    dxM: PASTE_OFFSET_M * n,
+    dyM: PASTE_OFFSET_M * n,
+  });
+  if (!result) return false;
+
+  const bodies = Object.values(result.bodyMap);
+  objectBrowser?.scheduleRefresh();
+
+  const ropeBodies = bodies.filter(b => b._ropeSegment && b._ropeId);
+  if (ropeBodies.length && ropeBodies.every(b => b._ropeId === ropeBodies[0]._ropeId)) {
+    const sel = ropeSelection(engine, ropeBodies[0]._ropeId);
+    if (sel) {
+      _onSandboxSelect(sel);
+      return true;
+    }
+  }
+
+  const pastedIds = new Set(bodies.map(b => b.id));
+  const aggs = (engine._uiAggregates ?? []).filter(a =>
+    Array.isArray(a.memberIds)
+    && a.memberIds.length >= 2
+    && a.memberIds.every(id => pastedIds.has(id)),
+  );
+  if (aggs.length) {
+    const a = aggs[aggs.length - 1];
+    _onSandboxSelect({
+      type: 'aggregate',
+      aggId: a.id,
+      id: a.id,
+      key: `agg:${a.id}`,
+      memberIds: [...a.memberIds],
+    });
+    return true;
+  }
+
+  if (bodies.length === 1) {
+    _onSandboxSelect({ type: 'body', id: bodies[0].id });
+    return true;
+  }
+  if (bodies.length > 1) {
+    _onSandboxSelect({
+      type: 'aggregate',
+      memberIds: bodies.map(b => b.id),
+      key: `paste:${bodies[0].id}`,
+    });
+    return true;
+  }
+  return true;
+}
 
 function _doUndo() {
   if (appMode !== 'setup') return;
@@ -928,7 +1023,7 @@ tlClearFrames.addEventListener('click', () => {
   _updateFill(0);
   tlFrameCount.textContent  = '0 fr';
   tlTimeDisplay.textContent = '0.000 s';
-  btnExportSvg.disabled = true;
+  if (btnExportSvg) btnExportSvg.disabled = true;
   btnExportMp4.disabled = true;
   setMode('setup');
   _syncGraphs(true);
@@ -1004,7 +1099,8 @@ videoExportSupported().then(ok => {
 function _syncExportButtons(forceDisable = false) {
   const hasFrames = !forceDisable && recorder.frameCount > 0 && !_exportBusy;
   const hasGraphExport = !forceDisable && graphHost.listVideoExportCandidates().length > 0 && !_exportBusy;
-  if (btnExportSvg) btnExportSvg.disabled = !hasFrames;
+  // SVG export UI is hidden for now; keep the exporter module for later.
+  if (btnExportSvg) btnExportSvg.disabled = true;
   if (btnExportMp4) btnExportMp4.disabled = (!hasFrames && !hasGraphExport) || !_videoExportOk || _exportBusy;
 }
 
@@ -1365,7 +1461,7 @@ async function _runBatchVideoExport(opts) {
   }
 }
 
-btnExportSvg.addEventListener('click', () => {
+btnExportSvg?.addEventListener('click', () => {
   _closePresetMenu();
   if (btnExportSvg.disabled) return;
   const size   = _viewSize();
@@ -2272,6 +2368,7 @@ function _onSelHandleDocMove(e) {
       excludeConstraintId: c.id,
       excludeBodyId: otherBody?.id ?? null,
       hitPx: 32,
+      snapGrid: _snapEnabled,
     });
     _selHandleDrag.hoverTarget = target;
     if (target) {
@@ -2299,8 +2396,8 @@ function _onSelHandleDocMove(e) {
       _selHandleGhost.setAttribute('pointer-events', 'none');
       renderer.uiTopLayer.appendChild(_selHandleGhost);
     }
-    const gx = target ? target.world.x : raw.x;
-    const gy = target ? target.world.y : raw.y;
+    const gx = target ? target.world.x : snapWorldCoord(raw.x, _snapEnabled);
+    const gy = target ? target.world.y : snapWorldCoord(raw.y, _snapEnabled);
     _selHandleGhost.setAttribute('cx', String(gx));
     _selHandleGhost.setAttribute('cy', String(gy));
     _selHandleGhost.setAttribute('opacity', target ? '0.95' : '0.45');
@@ -2310,6 +2407,7 @@ function _onSelHandleDocMove(e) {
     const target = findConstraintAttachTarget(engine, raw.x, raw.y, {
       excludeBodyId: other?.body?.id ?? null,
       hitPx: 32,
+      snapGrid: _snapEnabled,
     });
     const attached = target
       ? setRopeEndAttachment(engine, ropeId, _selHandleDrag.end, target.body, target.local)
@@ -2319,7 +2417,10 @@ function _onSelHandleDocMove(e) {
       setRopeEndAttachment(engine, ropeId, _selHandleDrag.end, null);
       const node = ropeEndNode(engine, ropeId, _selHandleDrag.end);
       if (node) {
-        Body.setPosition(node, { x: raw.x, y: raw.y });
+        Body.setPosition(node, {
+          x: snapWorldCoord(raw.x, _snapEnabled),
+          y: snapWorldCoord(raw.y, _snapEnabled),
+        });
         Body.setVelocity(node, { x: 0, y: 0 });
       }
     } else {
@@ -2338,8 +2439,8 @@ function _onSelHandleDocMove(e) {
       _selHandleGhost.setAttribute('pointer-events', 'none');
       renderer.uiTopLayer.appendChild(_selHandleGhost);
     }
-    const gx = attached ? target.world.x : raw.x;
-    const gy = attached ? target.world.y : raw.y;
+    const gx = attached ? target.world.x : snapWorldCoord(raw.x, _snapEnabled);
+    const gy = attached ? target.world.y : snapWorldCoord(raw.y, _snapEnabled);
     _selHandleGhost.setAttribute('cx', String(gx));
     _selHandleGhost.setAttribute('cy', String(gy));
     _selHandleGhost.setAttribute('opacity', attached ? '0.95' : '0.45');
@@ -2460,7 +2561,7 @@ function _onConHandleDown(e) {
       axis: { x: dx / len, y: dy / len },
       orig: { body, local, length: c.length },
       lastLength: c.length,
-      hangingChain: captureHangingChain(engine, body),
+      hangingChain: captureHangingChain(engine, body, { skipConstraintIds: [cId] }),
     };
   } else {
     _selHandleDrag = {
@@ -2666,7 +2767,8 @@ function _scaleHandleWorldPt(e) {
 function _wedgeScaleHandleWorld(body, edge) {
   const W = body._baseWidth ?? 40;
   const H = body._height ?? 40;
-  const loc = wedgeScaleHandleLocal(W, H, edge);
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  const loc = wedgeScaleHandleLocal(W, H, edge, undefined, flipX, flipY);
   const aabb = wedgeAABBCenterWorld(body);
   const c = Math.cos(body.angle);
   const s = Math.sin(body.angle);
@@ -2674,6 +2776,21 @@ function _wedgeScaleHandleWorld(body, edge) {
     x: aabb.x + c * loc.x - s * loc.y,
     y: aabb.y + s * loc.x + c * loc.y,
   };
+}
+
+/** Resize cursor for a wedge handle from the growth axis in world space. */
+function _wedgeScaleHandleCursor(body, edge) {
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  // W grows along local ±x (toward the foot); H along local ±y (toward the apex).
+  let axis = body.angle;
+  if (edge === 'W') {
+    if (flipX) axis += Math.PI;
+  } else {
+    axis += flipY ? Math.PI / 2 : -Math.PI / 2;
+  }
+  const ux = Math.cos(axis);
+  const uy = Math.sin(axis);
+  return Math.abs(ux) >= Math.abs(uy) ? 'ew-resize' : 'ns-resize';
 }
 
 function _scaleHandleWorldForBody(body, kind, edge) {
@@ -2692,6 +2809,9 @@ function _updateScaleHandlePositionsOnly() {
     const p = _scaleHandleWorldForBody(b, kind, edge);
     h.setAttribute('cx', String(p.x));
     h.setAttribute('cy', String(p.y));
+    if (kind === 'wedge') {
+      h.setAttribute('cursor', _wedgeScaleHandleCursor(b, edge));
+    }
   }
 }
 
@@ -2727,8 +2847,8 @@ function _buildScaleHandles(key) {
     mkHandle('T', 'ns-resize');
     mkHandle('B', 'ns-resize');
   } else if (kind === 'wedge') {
-    mkHandle('W', 'ew-resize');
-    mkHandle('H', 'ns-resize');
+    mkHandle('W', _wedgeScaleHandleCursor(body, 'W'));
+    mkHandle('H', _wedgeScaleHandleCursor(body, 'H'));
   } else {
     mkHandle('R', 'ew-resize');
   }
@@ -2850,8 +2970,8 @@ function _onScaleHandleDocMove(e) {
     else if (edge === 'T') nh = 2 * Math.max(minHalf, -loc.y);
     else if (edge === 'B') nh = 2 * Math.max(minHalf, loc.y);
     if (snap) {
-      nw = snapWorldCoord(nw, true);
-      nh = snapWorldCoord(nh, true);
+      nw = snapBodySizePx(nw, true);
+      nh = snapBodySizePx(nh, true);
     }
     scaleBoxTo(body, nw, nh);
     if (_scaleHandleGhost) {
@@ -2863,39 +2983,60 @@ function _onScaleHandleDocMove(e) {
     let H = body._height ?? 40;
     const edge = _scaleHandleDrag.edge;
     const loc = worldToWedgeAABBLocal(body, pt.x, pt.y);
+    const { flipX, flipY } = wedgeFlipFlags(body);
     if (ctrl) {
       // Same pin as normal drag, but snap the angle at the opposite handle (5°).
       if (edge === 'W') {
-        // Pin left, snap top ∠ (near H handle): β = atan(W/H), keep H.
-        const Wraw = Math.max(minHalf * 2, loc.x + W / 2);
-        let beta = clampWedgeFootAngle(Math.atan2(Wraw, H));
+        // Pin vertical, snap top ∠: β = atan(W/H), keep H.
+        const vLocalX = flipX ? W / 2 : -W / 2;
+        let signed = (loc.x - vLocalX) * (flipX ? -1 : 1);
+        signed = Math.max(minHalf * 2, signed);
+        let beta = clampWedgeFootAngle(Math.atan2(signed, H));
         beta = clampWedgeFootAngle(snapAngleRad(beta, true));
         W = Math.max(minHalf * 2, H * Math.tan(beta));
-        scaleWedgeTo(body, W, H, { pin: 'left' });
+        scaleWedgeTo(body, W, H, { pin: 'left', pinFlipX: flipX, pinFlipY: flipY });
         if (_scaleHandleGhost) _setScaleGhostAngleMark(body, 'top');
       } else {
-        // Pin bottom, snap foot ∠ (near W handle): α = atan(H/W), keep W.
-        const Hraw = Math.max(minHalf * 2, H / 2 - loc.y);
-        let alpha = clampWedgeFootAngle(Math.atan2(Hraw, W));
+        // Pin base, snap foot ∠: α = atan(H/W), keep W.
+        const bLocalY = flipY ? -H / 2 : H / 2;
+        let signed = (bLocalY - loc.y) * (flipY ? -1 : 1);
+        signed = Math.max(minHalf * 2, signed);
+        let alpha = clampWedgeFootAngle(Math.atan2(signed, W));
         alpha = clampWedgeFootAngle(snapAngleRad(alpha, true));
         H = Math.max(minHalf * 2, W * Math.tan(alpha));
-        scaleWedgeTo(body, W, H, { pin: 'bottom' });
+        scaleWedgeTo(body, W, H, { pin: 'bottom', pinFlipX: flipX, pinFlipY: flipY });
         if (_scaleHandleGhost) _setScaleGhostAngleMark(body, 'foot');
       }
     } else if (edge === 'W') {
-      // Grow/shrink base, keep the opposite (vertical) edge fixed.
-      W = Math.max(minHalf * 2, loc.x + W / 2);
-      if (snap) W = snapWorldCoord(W, true);
-      scaleWedgeTo(body, W, H, { pin: 'left' });
+      // Grow/shrink base; drag past the vertical to invert (flipX).
+      const vLocalX = flipX ? W / 2 : -W / 2;
+      let signed = (loc.x - vLocalX) * (flipX ? -1 : 1);
+      const pinFlipX = flipX;
+      const pinFlipY = flipY;
+      if (signed < 0) {
+        body._wedgeFlipX = !flipX;
+        signed = -signed;
+      }
+      W = Math.max(minHalf * 2, signed);
+      if (snap) W = snapBodySizePx(W, true);
+      scaleWedgeTo(body, W, H, { pin: 'left', pinFlipX, pinFlipY });
       if (_scaleHandleGhost) {
         _setScaleGhostSizeLabel(body,
           `${pxToM(body._baseWidth).toFixed(2)} × ${pxToM(body._height).toFixed(2)} m`);
       }
     } else if (edge === 'H') {
-      // Grow/shrink height, keep the opposite (base) edge fixed.
-      H = Math.max(minHalf * 2, H / 2 - loc.y);
-      if (snap) H = snapWorldCoord(H, true);
-      scaleWedgeTo(body, W, H, { pin: 'bottom' });
+      // Grow/shrink height; drag past the base to invert (flipY).
+      const bLocalY = flipY ? -H / 2 : H / 2;
+      let signed = (bLocalY - loc.y) * (flipY ? -1 : 1);
+      const pinFlipX = flipX;
+      const pinFlipY = flipY;
+      if (signed < 0) {
+        body._wedgeFlipY = !flipY;
+        signed = -signed;
+      }
+      H = Math.max(minHalf * 2, signed);
+      if (snap) H = snapBodySizePx(H, true);
+      scaleWedgeTo(body, W, H, { pin: 'bottom', pinFlipX, pinFlipY });
       if (_scaleHandleGhost) {
         _setScaleGhostSizeLabel(body,
           `${pxToM(body._baseWidth).toFixed(2)} × ${pxToM(body._height).toFixed(2)} m`);
@@ -2995,11 +3136,86 @@ function _updateSceneResetButton() {
   if (!btnSceneReset) return;
   const hasBaseline = !!_sceneBaseline;
   btnSceneReset.disabled = !hasBaseline;
+  const name = _sceneSource?.name ?? 'saved setup';
   const label = hasBaseline
-    ? `Reset to "${_sceneSource?.name ?? 'loaded scene'}"`
+    ? `Reset to last saved (“${name}”)`
     : 'Reset scene';
   btnSceneReset.title = label;
   btnSceneReset.setAttribute('aria-label', label);
+}
+
+/**
+ * Capture the live setup as the Reset checkpoint (Ctrl+S).
+ * Does not download a file — use Export JSON for that.
+ */
+function _saveSceneCheckpoint() {
+  // Match export: free pan/zoom → store the view the user sees, unless the
+  // camera tool owns the intentional export frame.
+  if (interaction.mode !== 'camera') {
+    const { width, height } = _viewSize();
+    if (width >= 2 && height >= 2) {
+      cameraRig.syncFromCamera(camera, width, height);
+    }
+  }
+  const name = _sceneSource?.name ?? _sceneBaseline?.meta?.name ?? 'Untitled scene';
+  const doc = serializeScene(engine, {
+    meta: {
+      name,
+      source: _sceneSource?.type ?? 'editor',
+    },
+    environment: _readEnvironmentFromUI(),
+    camera: cameraRig.toSceneDoc(),
+    measurements: measurements.toScene(),
+    labels: labels.toScene(),
+  });
+  const validated = validateSceneDocument(doc);
+  if (!validated.ok) {
+    alert(validated.error);
+    return;
+  }
+  _sceneBaseline = cloneSceneDocument(validated.doc);
+  if (!_sceneSource) {
+    _sceneSource = { type: 'editor', name };
+  } else {
+    _sceneSource = { ..._sceneSource, name };
+  }
+  _updateSceneResetButton();
+  _showToolbarToast('Setup saved');
+}
+
+/** @type {ReturnType<typeof setTimeout>|null} */
+let _toolbarToastTimer = null;
+
+/**
+ * Brief fade-in confirmation under the top toolbar.
+ * @param {string} message
+ */
+function _showToolbarToast(message) {
+  if (!toolbarToast) return;
+  if (_toolbarToastTimer) {
+    clearTimeout(_toolbarToastTimer);
+    _toolbarToastTimer = null;
+  }
+  toolbarToast.textContent = message;
+  toolbarToast.classList.remove('hidden');
+  // Force reflow so re-showing restarts the opacity transition.
+  void toolbarToast.offsetWidth;
+  toolbarToast.classList.add('visible');
+  _toolbarToastTimer = setTimeout(() => {
+    toolbarToast.classList.remove('visible');
+    _toolbarToastTimer = setTimeout(() => {
+      toolbarToast.classList.add('hidden');
+      _toolbarToastTimer = null;
+    }, 240);
+  }, 1600);
+}
+
+function _clearEntireScene() {
+  const ok = window.confirm(
+    'Clear the entire scene?\n\nAll bodies, constraints, measurements, and labels will be deleted. This cannot be undone.',
+  );
+  if (!ok) return;
+  _loadBlankScene();
 }
 
 function _finishSceneLoad(source) {
@@ -3014,7 +3230,7 @@ function _finishSceneLoad(source) {
   tlFrameCount.textContent  = '0 fr';
   tlTimeDisplay.textContent = '0.000 s';
   simTimeEl.textContent     = 't = 0.000 s';
-  btnExportSvg.disabled = true;
+  if (btnExportSvg) btnExportSvg.disabled = true;
   btnExportMp4.disabled = true;
   setMode('setup');
   _updateMainTransportButton();
@@ -3116,6 +3332,15 @@ function _resetScene() {
 }
 
 function _exportSceneJSON() {
+  // Free pan/zoom updates the live camera but not the rig. Sync so the file
+  // stores the view the user sees — except in camera-tool mode, where the rig
+  // is the intentional export frame and may differ from the live pan.
+  if (interaction.mode !== 'camera') {
+    const { width, height } = _viewSize();
+    if (width >= 2 && height >= 2) {
+      cameraRig.syncFromCamera(camera, width, height);
+    }
+  }
   const doc = serializeScene(engine, {
     meta: {
       name: _sceneSource?.name ?? 'Scene',
@@ -3193,6 +3418,10 @@ btnSceneSave?.addEventListener('click', () => {
 
 btnSceneReset?.addEventListener('click', () => {
   _resetScene();
+});
+
+btnSceneClear?.addEventListener('click', () => {
+  _clearEntireScene();
 });
 
 btnSettings?.addEventListener('click', () => {

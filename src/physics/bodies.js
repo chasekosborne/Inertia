@@ -6,6 +6,7 @@ import {
   DEFAULT_BOX_SIZE_M,
 } from '../units.js';
 import { COLORS } from '../theme.js';
+import { snapWorldCoord } from '../grid.js';
 
 /** Hull sides for dynamic disks. Matter.Bodies.circle caps sides at pixel radius. */
 export const CIRCLE_HULL_SIDES = 32;
@@ -122,7 +123,7 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
     isStatic:       false,
     label: `${labelPrefix}_${nextId()}`,
   };
-  if ('slop' in opts) circleOpts.slop = opts.slop;
+  if (Number.isFinite(opts.slop)) circleOpts.slop = opts.slop;
   if (opts.collisionFilter) circleOpts.collisionFilter = opts.collisionFilter;
   // Bodies.circle caps sides at pixel radius, so small disks become 10-gons and
   // chatter when rolling. Rope nodes stay as cheap default circles.
@@ -137,7 +138,7 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
   body._muS        = muS;
   if (opts.ropeSegment) body._ropeSegment = true;
   if (newtonType === 'point-mass') {
-    // Filled (box-grey) by default, user can switch to a hollow ring in properties.
+    // Filled particle by default; user can switch to a hollow ring in properties.
     body._hollow = opts.hollow === true;
   }
   applyCircleInertia(body);
@@ -152,12 +153,12 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
 }
 
 /**
- * Circle: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
- * Drawn filled with box-grey (+ outline) by default, set `hollow: true` for a ring.
+ * Point mass: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
+ * Drawn as a filled particle (ink); set `hollow: true` for a ring.
  * Physics type id remains `point-mass` for scenes. Finite inertia → can roll.
  */
 export function createPointMass(x, y, opts = {}) {
-  return _createCircleBody(x, y, opts, 'point-mass', DEFAULT_CIRCLE_RADIUS_M, 'circle');
+  return _createCircleBody(x, y, opts, 'point-mass', DEFAULT_CIRCLE_RADIUS_M, 'point');
 }
 
 /** Alias: same as {@link createPointMass}. */
@@ -288,30 +289,53 @@ export function clampWedgeFootAngle(angleRad) {
 
 /**
  * Right-triangle verts before any COM shift (AABB centred at origin, +y down).
- * Right angle at bottom-left, base along +x, vertical back on the left.
+ * Default: right angle at bottom-left, base along +x, vertical on the left.
+ * `flipX` / `flipY` mirror across the AABB midlines (invert via scale drag).
+ * Returns [rightAngle, foot, verticalApex].
  */
-export function wedgeRawVerts(baseW, height) {
+export function wedgeRawVerts(baseW, height, flipX = false, flipY = false) {
   const hw = baseW / 2;
   const hh = height / 2;
-  return [
-    { x: -hw, y: hh },   // bottom-left (right angle)
-    { x:  hw, y: hh },   // bottom-right (foot)
-    { x: -hw, y: -hh },  // top-left
-  ];
+  let ra = { x: -hw, y: hh };
+  let foot = { x: hw, y: hh };
+  let apex = { x: -hw, y: -hh };
+  if (flipX) {
+    ra = { x: hw, y: ra.y };
+    foot = { x: -hw, y: foot.y };
+    apex = { x: hw, y: apex.y };
+  }
+  if (flipY) {
+    ra = { x: ra.x, y: -ra.y };
+    foot = { x: foot.x, y: -foot.y };
+    apex = { x: apex.x, y: -apex.y };
+  }
+  return [ra, foot, apex];
+}
+
+/** @param {import('matter-js').Body|null|undefined} body */
+export function wedgeFlipFlags(body) {
+  return {
+    flipX: body?._wedgeFlipX === true,
+    flipY: body?._wedgeFlipY === true,
+  };
 }
 
 /**
  * COM offset from AABB centre for {@link wedgeRawVerts} (local, unrotated).
- * For a right △: (−W/6, H/6). Matter stores the body at the COM, layout/snap use AABB centre.
+ * Matter stores the body at the COM; layout/snap use AABB centre.
  */
-export function wedgeComOffsetFromAABB(baseW, height) {
-  return { x: -baseW / 6, y: height / 6 };
+export function wedgeComOffsetFromAABB(baseW, height, flipX = false, flipY = false) {
+  const [ra, foot, apex] = wedgeRawVerts(baseW, height, flipX, flipY);
+  return {
+    x: (ra.x + foot.x + apex.x) / 3,
+    y: (ra.y + foot.y + apex.y) / 3,
+  };
 }
 
 /** Vertices centred on the triangle centroid (Matter body / SVG at body.position). */
-export function wedgeVertsCentred(baseW, height) {
-  const o = wedgeComOffsetFromAABB(baseW, height);
-  return wedgeRawVerts(baseW, height).map(v => ({ x: v.x - o.x, y: v.y - o.y }));
+export function wedgeVertsCentred(baseW, height, flipX = false, flipY = false) {
+  const o = wedgeComOffsetFromAABB(baseW, height, flipX, flipY);
+  return wedgeRawVerts(baseW, height, flipX, flipY).map(v => ({ x: v.x - o.x, y: v.y - o.y }));
 }
 
 /**
@@ -375,10 +399,13 @@ export function wedgeOutlineStrokePx(baseW, height) {
 }
 
 /** World-space AABB centre (layout origin: same role as a box’s centre). */
-export function wedgeAABBCenterWorld(body) {
+export function wedgeAABBCenterWorld(body, flipX = undefined, flipY = undefined) {
   const W = body._baseWidth ?? 40;
   const H = body._height ?? 40;
-  const o = wedgeComOffsetFromAABB(W, H);
+  const flags = wedgeFlipFlags(body);
+  const fx = flipX !== undefined ? flipX === true : flags.flipX;
+  const fy = flipY !== undefined ? flipY === true : flags.flipY;
+  const o = wedgeComOffsetFromAABB(W, H, fx, fy);
   const c = Math.cos(body.angle);
   const s = Math.sin(body.angle);
   return {
@@ -391,7 +418,8 @@ export function wedgeAABBCenterWorld(body) {
 export function setWedgeAABBCenter(body, ax, ay) {
   const W = body._baseWidth ?? 40;
   const H = body._height ?? 40;
-  const o = wedgeComOffsetFromAABB(W, H);
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  const o = wedgeComOffsetFromAABB(W, H, flipX, flipY);
   const c = Math.cos(body.angle);
   const s = Math.sin(body.angle);
   Body.setPosition(body, {
@@ -400,18 +428,80 @@ export function setWedgeAABBCenter(body, ax, ay) {
   });
 }
 
+/** Radians: treat as axis-aligned if within this of a multiple of 90°. */
+const WEDGE_CARDINAL_SNAP_RAD = (2.5 * Math.PI) / 180;
+
+/**
+ * Snap a wedge onto the world grid.
+ *
+ * At (near) 0°/90°/180°/270°, the legs are axis-aligned: snapping the world
+ * AABB's min corner keeps edges on grid lines even when half-extents are odd
+ * multiples of the cell (AABB-centre snap alone would leave verts off-grid).
+ * Otherwise fall back to snapping the layout AABB centre.
+ *
+ * @param {import('matter-js').Body} body
+ * @param {boolean} [enabled=true]
+ * @returns {boolean} true if the body was moved
+ */
+export function snapWedgeToGrid(body, enabled = true) {
+  if (!enabled || body?._newtonType !== 'wedge') return false;
+
+  const tau = Math.PI * 2;
+  let a = body.angle % tau;
+  if (a < 0) a += tau;
+  const quarter = Math.PI / 2;
+  const k = Math.round(a / quarter);
+  const cardinal = (k * quarter) % tau;
+  let err = Math.abs(a - cardinal);
+  err = Math.min(err, tau - err);
+
+  const before = wedgeAABBCenterWorld(body);
+
+  if (err <= WEDGE_CARDINAL_SNAP_RAD) {
+    const t = wedgeTriangleWorldVerts(body);
+    const xs = [t.bl.x, t.br.x, t.tl.x];
+    const ys = [t.bl.y, t.br.y, t.tl.y];
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const dx = snapWorldCoord(minX, true) - minX;
+    const dy = snapWorldCoord(minY, true) - minY;
+    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return false;
+    setWedgeAABBCenter(body, before.x + dx, before.y + dy);
+    return true;
+  }
+
+  const ax = snapWorldCoord(before.x, true);
+  const ay = snapWorldCoord(before.y, true);
+  if (Math.abs(ax - before.x) < 1e-9 && Math.abs(ay - before.y) < 1e-9) return false;
+  setWedgeAABBCenter(body, ax, ay);
+  return true;
+}
+
 /** Small visual pad so scale handles sit just outside the edges. */
 export const WEDGE_HANDLE_OUTSET_PX = 8;
 
 /**
  * Scale-handle positions in AABB-centred local coords.
- * `W`: outside the right foot tip (base), `H`: outside the top of the vertical.
+ * `W`: outside the foot tip (base), `H`: outside the vertical apex.
  */
-export function wedgeScaleHandleLocal(baseW, height, edge, outsetPx = WEDGE_HANDLE_OUTSET_PX) {
-  const hw = baseW / 2;
-  const hh = height / 2;
-  if (edge === 'W') return { x: hw + outsetPx, y: hh };
-  if (edge === 'H') return { x: -hw, y: -hh - outsetPx };
+export function wedgeScaleHandleLocal(
+  baseW, height, edge, outsetPx = WEDGE_HANDLE_OUTSET_PX, flipX = false, flipY = false,
+) {
+  const [ra, foot, apex] = wedgeRawVerts(baseW, height, flipX, flipY);
+  if (edge === 'W') {
+    const vx = (ra.x + apex.x) / 2;
+    const vy = (ra.y + apex.y) / 2;
+    const dx = foot.x - vx;
+    const dy = foot.y - vy;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: foot.x + (dx / len) * outsetPx, y: foot.y + (dy / len) * outsetPx };
+  }
+  if (edge === 'H') {
+    const dx = apex.x - ra.x;
+    const dy = apex.y - ra.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: apex.x + (dx / len) * outsetPx, y: apex.y + (dy / len) * outsetPx };
+  }
   return { x: 0, y: 0 };
 }
 
@@ -438,17 +528,17 @@ export function wedgeAABBLocalToWorld(body, lx, ly) {
 
 /**
  * World vertices of the right △.
- * `bl`: 90°, `br`: foot, `tl`: top (vertical apex).
+ * `bl`: 90°, `br`: foot, `tl`: vertical apex (opposite the right angle on the vertical).
  */
 export function wedgeTriangleWorldVerts(body) {
   const W = body._baseWidth ?? 40;
   const H = body._height ?? 40;
-  const hw = W / 2;
-  const hh = H / 2;
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  const [ra, foot, apex] = wedgeRawVerts(W, H, flipX, flipY);
   return {
-    bl: wedgeAABBLocalToWorld(body, -hw, hh),
-    br: wedgeAABBLocalToWorld(body,  hw, hh),
-    tl: wedgeAABBLocalToWorld(body, -hw, -hh),
+    bl: wedgeAABBLocalToWorld(body, ra.x, ra.y),
+    br: wedgeAABBLocalToWorld(body, foot.x, foot.y),
+    tl: wedgeAABBLocalToWorld(body, apex.x, apex.y),
   };
 }
 
@@ -521,13 +611,16 @@ export function wedgeSizeFromTopAngleKeepWidth(baseWidthPx, topAngleRad) {
 
 /**
  * Rebuild right-triangle wedge verts.
- * @param {{ pin?: 'centre'|'left'|'bottom'|'corner'|'topLeft'|'bottomRight' }} [opts]
+ * @param {{ pin?: 'centre'|'left'|'bottom'|'corner'|'topLeft'|'bottomRight',
+ *           pinFlipX?: boolean, pinFlipY?: boolean }} [opts]
  *   `centre` (default): keep AABB centre.
- *   `left`: keep the vertical (left) edge fixed in world.
- *   `bottom`: keep the base (bottom) edge fixed in world.
- *   `corner`: keep the right-angle corner (bottom-left) fixed.
- *   `topLeft`: keep the top-left apex fixed (opp. the foot).
- *   `bottomRight`: keep the right foot fixed (opp. the top apex).
+ *   `left`: keep the vertical leg fixed in world.
+ *   `bottom`: keep the base leg fixed in world.
+ *   `corner`: keep the right-angle corner fixed.
+ *   `topLeft`: keep the vertical apex fixed (opp. the foot).
+ *   `bottomRight`: keep the foot fixed (opp. the vertical apex).
+ *   `pinFlipX` / `pinFlipY`: flips that were active when the pin edge was measured
+ *   (defaults to the body's current flips).
  */
 export function setWedgeGeometry(body, baseW, height, opts = {}) {
   const W = Math.max(MIN_WEDGE_PX, baseW);
@@ -535,7 +628,11 @@ export function setWedgeGeometry(body, baseW, height, opts = {}) {
   const pin = opts.pin ?? 'centre';
   const W0 = body._baseWidth ?? W;
   const H0 = body._height ?? H;
-  const aabb0 = wedgeAABBCenterWorld(body);
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  const flipX0 = opts.pinFlipX !== undefined ? opts.pinFlipX === true : flipX;
+  const flipY0 = opts.pinFlipY !== undefined ? opts.pinFlipY === true : flipY;
+  // When flips just changed, Matter pose still matches pinFlip* — use those for AABB.
+  const aabb0 = wedgeAABBCenterWorld(body, flipX0, flipY0);
   const angle = body.angle;
   const mass = body.mass;
   const c = Math.cos(angle);
@@ -546,38 +643,49 @@ export function setWedgeGeometry(body, baseW, height, opts = {}) {
     y: oy + s * lx + c * ly,
   });
 
+  const vertX = (fl, w) => (fl ? w / 2 : -w / 2);
+  const baseY = (fl, h) => (fl ? -h / 2 : h / 2);
+
   let aabb = { ...aabb0 };
   if (pin === 'left') {
-    const left = localToWorld(aabb0.x, aabb0.y, -W0 / 2, 0);
+    const vx0 = vertX(flipX0, W0);
+    const vx1 = vertX(flipX, W);
+    const left = localToWorld(aabb0.x, aabb0.y, vx0, 0);
     aabb = {
-      x: left.x + c * (W / 2),
-      y: left.y + s * (W / 2),
+      x: left.x - (c * vx1 - s * 0),
+      y: left.y - (s * vx1 + c * 0),
     };
   } else if (pin === 'bottom') {
-    const bot = localToWorld(aabb0.x, aabb0.y, 0, H0 / 2);
+    const by0 = baseY(flipY0, H0);
+    const by1 = baseY(flipY, H);
+    const bot = localToWorld(aabb0.x, aabb0.y, 0, by0);
     aabb = {
-      x: bot.x - (c * 0 - s * (H / 2)),
-      y: bot.y - (s * 0 + c * (H / 2)),
+      x: bot.x - (c * 0 - s * by1),
+      y: bot.y - (s * 0 + c * by1),
     };
   } else if (pin === 'corner') {
-    const corner = localToWorld(aabb0.x, aabb0.y, -W0 / 2, H0 / 2);
+    const [ra0] = wedgeRawVerts(W0, H0, flipX0, flipY0);
+    const [ra1] = wedgeRawVerts(W, H, flipX, flipY);
+    const corner = localToWorld(aabb0.x, aabb0.y, ra0.x, ra0.y);
     aabb = {
-      x: corner.x - (c * (-W / 2) - s * (H / 2)),
-      y: corner.y - (s * (-W / 2) + c * (H / 2)),
+      x: corner.x - (c * ra1.x - s * ra1.y),
+      y: corner.y - (s * ra1.x + c * ra1.y),
     };
   } else if (pin === 'topLeft') {
-    // TL local (−W/2, −H/2)
-    const tl = localToWorld(aabb0.x, aabb0.y, -W0 / 2, -H0 / 2);
+    const [, , apex0] = wedgeRawVerts(W0, H0, flipX0, flipY0);
+    const [, , apex1] = wedgeRawVerts(W, H, flipX, flipY);
+    const tl = localToWorld(aabb0.x, aabb0.y, apex0.x, apex0.y);
     aabb = {
-      x: tl.x - (c * (-W / 2) - s * (-H / 2)),
-      y: tl.y - (s * (-W / 2) + c * (-H / 2)),
+      x: tl.x - (c * apex1.x - s * apex1.y),
+      y: tl.y - (s * apex1.x + c * apex1.y),
     };
   } else if (pin === 'bottomRight') {
-    // BR local (+W/2, +H/2)
-    const br = localToWorld(aabb0.x, aabb0.y, W0 / 2, H0 / 2);
+    const [, foot0] = wedgeRawVerts(W0, H0, flipX0, flipY0);
+    const [, foot1] = wedgeRawVerts(W, H, flipX, flipY);
+    const br = localToWorld(aabb0.x, aabb0.y, foot0.x, foot0.y);
     aabb = {
-      x: br.x - (c * (W / 2) - s * (H / 2)),
-      y: br.y - (s * (W / 2) + c * (H / 2)),
+      x: br.x - (c * foot1.x - s * foot1.y),
+      y: br.y - (s * foot1.x + c * foot1.y),
     };
   }
 
@@ -588,7 +696,7 @@ export function setWedgeGeometry(body, baseW, height, opts = {}) {
   // Matter stores verts in world space tracked by body.angle. Apply unrotated
   // COM-local verts at angle 0, then restore angle: avoids double-rotation /
   // desync that breaks bounds & hit-testing after scale.
-  const localVerts = wedgeVertsCentred(W, H);
+  const localVerts = wedgeVertsCentred(W, H, flipX, flipY);
   Body.setAngle(body, 0);
   const pos = body.position;
   Body.setVertices(body, localVerts.map(v => ({
@@ -613,26 +721,32 @@ export function wedgeContainsWorldPoint(body, wx, wy, padPx = 4) {
   const W = body._baseWidth ?? 40;
   const H = body._height ?? 40;
   const loc = worldToWedgeAABBLocal(body, wx, wy);
-  // Slight pad so edge/outline clicks still hit.
   const hw = W / 2 + padPx;
   const hh = H / 2 + padPx;
   if (Math.abs(loc.x) > hw + 1 || Math.abs(loc.y) > hh + 1) return false;
-  // Right △: left x ≥ -W/2, bottom y ≤ +H/2, and above the hypotenuse
-  // (from (-W/2,-H/2) to (+W/2,+H/2))? Raw verts: BL(-hw,hh), BR(hw,hh), TL(-hw,-hh).
-  // Interior: x >= -hw, y <= hh, and on the correct side of the slope TL→BR.
-  // Slope from (-hw,-hh) to (hw,hh): (y+hh)/(x+hw) = (2hh)/(2hw) = H/W
-  // → y + hh = (H/W)*(x + hw) → y ≤ (H/W)*(x + hw) - hh  (below slope in +y-down... wait)
-  // TL top-left, BR bottom-right. Line: y - (-hh) = ((hh)-(-hh))/(hw-(-hw)) * (x - (-hw))
-  // y + hh = (2hh)/(2hw)*(x+hw) = (H/W)*(x+hw)
-  // Interior of triangle (to the left of slope when going TL→BR) is toward BL.
-  // For +y down: "inside" is y >= slope at a given x? BL is below TL. At x=-hw, y from -hh to hh.
-  // At fixed x, y goes from slope down to bottom? Slope y = -hh + (H/W)*(x+hw). Bottom y=hh.
-  // Inside: slope <= y <= hh and x >= -hw.
-  const x = loc.x;
-  const y = loc.y;
-  if (x < -hw || y > hh) return false;
-  const slopeY = -hh + (H / Math.max(W, 1e-9)) * (x + hw);
-  return y >= slopeY - padPx;
+
+  const { flipX, flipY } = wedgeFlipFlags(body);
+  let [a, b, c] = wedgeRawVerts(W, H, flipX, flipY);
+  if (padPx > 0) {
+    const cx = (a.x + b.x + c.x) / 3;
+    const cy = (a.y + b.y + c.y) / 3;
+    const expand = (p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const len = Math.hypot(dx, dy) || 1;
+      return { x: p.x + (dx / len) * padPx, y: p.y + (dy / len) * padPx };
+    };
+    a = expand(a);
+    b = expand(b);
+    c = expand(c);
+  }
+  const sign = (p1, p2, p3) => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  const d1 = sign(loc, a, b);
+  const d2 = sign(loc, b, c);
+  const d3 = sign(loc, c, a);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
 }
 
 /** Scale wedge base / height, optional edge pin (see {@link setWedgeGeometry}). */
@@ -656,7 +770,7 @@ export function createWedge(x, y, opts = {}) {
   const mass = opts.mass ?? DEFAULTS.mass;
   const muK = opts.muK ?? opts.friction ?? DEFAULTS.muK;
   const muS = opts.muS ?? opts.frictionStatic ?? DEFAULTS.muS;
-  const localVerts = wedgeVertsCentred(baseW, height);
+  const localVerts = wedgeVertsCentred(baseW, height, opts.flipX === true, opts.flipY === true);
   const body = Bodies.fromVertices(x, y, [localVerts], {
     restitution: opts.restitution ?? DEFAULTS.restitution,
     friction: muK,
@@ -672,6 +786,8 @@ export function createWedge(x, y, opts = {}) {
   body._footAngle = defaultWedgeFootAngle(body._baseWidth, body._height);
   body._muK = muK;
   body._muS = muS;
+  if (opts.flipX === true) body._wedgeFlipX = true;
+  if (opts.flipY === true) body._wedgeFlipY = true;
   // Flatten fromVertices parts + place by AABB centre (same as box placement).
   setWedgeGeometry(body, body._baseWidth, body._height, { pin: 'centre' });
   setWedgeAABBCenter(body, x, y);

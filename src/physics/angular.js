@@ -7,8 +7,9 @@
  *
  * About the COM, L = Iω (spin only). About a fixed point O,
  * L_O = Iω + r_com/O × p  (spin + orbital). The ⊙/⊗ glyph at the COM
- * shows ω, not L. Contact friction changes spin while coupling to
- * translation so pure rolling (v = ωr) can develop, total L about an
+ * shows spin L (painted above bodies). Planar force / velocity arrows
+ * paint above body fills (below L/τ). Contact friction changes spin while coupling to
+ * translation so pure rolling (v = ωr) can develop; total L about an
  * inertial origin is conserved when net external torque about that origin
  * vanishes.
  */
@@ -122,7 +123,12 @@ export function outOfPlaneGlyphRadius(magAbs, base = 5, gain = 2, maxR = 11) {
   return Math.min(maxR, base + gain * Math.sqrt(magAbs));
 }
 
-/** Compact ⊙/⊗ radius for angular velocity (rad/s): smaller than L / τ glyphs. */
+/** Compact ⊙/⊗ radius for angular velocity (rad/s). */
 export function outOfPlaneOmegaGlyphRadius(omegaAbs) {
   return outOfPlaneGlyphRadius(omegaAbs, 2.6, 0.35, 5);
+}
+
+/** ⊙/⊗ radius for spin angular momentum |L| (kg·m²/s). */
+export function outOfPlaneLGlyphRadius(LAbs) {
+  return outOfPlaneGlyphRadius(LAbs, 3.2, 0.85, 9);
 }

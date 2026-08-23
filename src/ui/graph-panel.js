@@ -13,7 +13,7 @@ import { ExperimentRunner } from '../experiment/runner.js';
 import { paramsForScene } from '../experiment/params.js';
 import { metricsForScene } from '../experiment/metrics.js';
 import { cloneSceneDocument } from '../scene/serialize.js';
-import { MATH_PLAIN } from '../math-text.js';
+import { MATH_PLAIN, setSvgAxisTitle } from '../math-text.js';
 import { FIT_MODELS, fit, sampleFit, FitError, fmtNum } from '../fit/index.js';
 import {
   copyText,
@@ -503,6 +503,49 @@ export function buildMeasurementSeries(frames, measurement, sceneDoc = null) {
 }
 
 /**
+ * Parametric plot of two scene measurements (e.g. θ₁ vs θ₂).
+ * Series uses `t` for the horizontal axis value and `v` for the vertical.
+ * @param {object[]} frames
+ * @param {object} measX
+ * @param {object} measY
+ * @param {object|null} [sceneDoc]
+ * @param {{ unwrapAngle?: boolean }} [opts]
+ *   Force unwrap on angle axes (also honors each measurement's `continuous` flag).
+ * @returns {{ t: number, v: number, i: number }[]}
+ */
+export function buildMeasurementPhaseSeries(frames, measX, measY, sceneDoc = null, opts = {}) {
+  const pts = [];
+  if (!measX || !measY || !frames?.length) return pts;
+  const forceUnwrap = opts.unwrapAngle === true;
+  const contX = measX.kind === 'angle' && measX.signed !== false
+    && (forceUnwrap || measX.continuous === true);
+  const contY = measY.kind === 'angle' && measY.signed !== false
+    && (forceUnwrap || measY.continuous === true);
+  /** @type {{ prev: number, accum: number }|null} */
+  let xState = null;
+  /** @type {{ prev: number, accum: number }|null} */
+  let yState = null;
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    let x = evaluateMeasurementOnFrame(measX, f, sceneDoc);
+    let y = evaluateMeasurementOnFrame(measY, f, sceneDoc);
+    if (x == null || y == null || !isFinite(x) || !isFinite(y)) continue;
+    if (contX) {
+      const step = unwrapAngleStep(xState, x, 360);
+      xState = step.state;
+      x = step.value;
+    }
+    if (contY) {
+      const step = unwrapAngleStep(yState, y, 360);
+      yState = step.state;
+      y = step.value;
+    }
+    pts.push({ t: x, v: y, i });
+  }
+  return pts;
+}
+
+/**
  * Data extents with padding: used for auto-fit / home (0).
  * @param {{ t: number, v: number }[]} series
  * @returns {GraphView|null}
@@ -530,6 +573,29 @@ export function seriesBounds(series) {
   const tPad = (t1 - t0) * 0.02;
   return { t0: t0 - tPad, t1: t1 + tPad, v0: v0 - vPad, v1: v1 + vPad };
 }
+
+/**
+ * Series point at/near a recorded frame index (exact match preferred).
+ * @param {{ i: number }[]} series
+ * @param {number} frameIndex
+ * @returns {{ i: number, t: number, v: number }|null}
+ */
+function seriesPointNearFrame(series, frameIndex) {
+  if (!series?.length || !(frameIndex >= 0)) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of series) {
+    if (!Number.isFinite(p.i)) continue;
+    const d = Math.abs(p.i - frameIndex);
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+      if (d === 0) break;
+    }
+  }
+  return best;
+}
+
 
 function _el(tag, attrs = {}, text) {
   const n = document.createElement(tag);
@@ -749,29 +815,60 @@ export class GraphHost {
    * @param {ObservableId} [seed.observable]
    * @param {ObservableId} [seed.phaseObsX]
    * @param {ObservableId} [seed.phaseObsY]
+   * @param {GraphSourceKind} [seed.sourceKind]
+   * @param {string|null} [seed.measurementId]
+   * @param {string|null} [seed.measurementIdY]
    */
   addGraph(seed = {}) {
     const bodies = this._opts.listBodies();
+    const measurements = this._opts.listMeasurements?.()
+      ?? this._opts.getBaselineScene?.()?.measurements
+      ?? [];
+    let sourceKind = seed.sourceKind === 'measurement' ? 'measurement' : 'body';
+    let measurementId = seed.measurementId ?? null;
+    let measurementIdY = seed.measurementIdY ?? null;
     let bodyId = seed.bodyId ?? this._opts.getSelectedBodyId?.() ?? null;
     let trackId = seed.trackId ?? this._opts.getSelectedTrackId?.() ?? bodyId;
-    if (bodyId == null || !bodies.some(b => b.id === bodyId || b.trackId === trackId)) {
-      bodyId = bodies[0]?.id ?? null;
-      trackId = bodies[0]?.trackId ?? bodyId;
+
+    if (sourceKind === 'measurement') {
+      if (!measurementId || !measurements.some(m => m.id === measurementId)) {
+        measurementId = measurements[0]?.id ?? null;
+      }
+      if (!measurementId) sourceKind = 'body';
+      else if (!measurementIdY || measurementIdY === measurementId
+        || !measurements.some(m => m.id === measurementIdY)) {
+        measurementIdY = measurements.find(m => m.id !== measurementId)?.id ?? null;
+      }
     }
-    // Prefer the list entry that matches the track (component inside a group).
-    const match = bodies.find(b => b.trackId === trackId)
-      ?? bodies.find(b => b.id === bodyId);
-    if (match) {
-      bodyId = match.id;
-      trackId = match.trackId ?? match.id;
+
+    if (sourceKind === 'body') {
+      if (bodyId == null || !bodies.some(b => b.id === bodyId || b.trackId === trackId)) {
+        bodyId = bodies[0]?.id ?? null;
+        trackId = bodies[0]?.trackId ?? bodyId;
+      }
+      // Prefer the list entry that matches the track (component inside a group).
+      const match = bodies.find(b => b.trackId === trackId)
+        ?? bodies.find(b => b.id === bodyId);
+      if (match) {
+        bodyId = match.id;
+        trackId = match.trackId ?? match.id;
+      }
+    } else {
+      bodyId = null;
+      trackId = null;
     }
+
     const observable = seed.observable ?? 'y';
     let mode = seed.mode === 'sweep' ? 'sweep'
       : seed.mode === 'phase' ? 'phase'
         : 'time';
     if (mode === 'phase') {
-      const engine = this._opts.getEngine?.();
-      if (!engine || !trackIsOneDof(engine, trackId)) mode = 'time';
+      if (sourceKind === 'measurement') {
+        if (!(measurements.length >= 2 && measurementId && measurementIdY)) mode = 'time';
+      } else {
+        const engine = this._opts.getEngine?.();
+        if (!engine || !trackIsOneDof(engine, trackId)) mode = 'time';
+      }
     }
     const win = new GraphWindow(this, {
       mode,
@@ -780,6 +877,9 @@ export class GraphHost {
       observable,
       phaseObsX: seed.phaseObsX ?? 'x',
       phaseObsY: seed.phaseObsY ?? 'px',
+      sourceKind,
+      measurementId,
+      measurementIdY,
       left: 24 + (this._stackOffset % 5) * 28,
       top: 24 + (this._stackOffset % 5) * 28,
     });
@@ -907,7 +1007,7 @@ export class GraphHost {
 class GraphWindow {
   /**
    * @param {GraphHost} host
-   * @param {{ mode: GraphMode, bodyId: number|null, trackId?: number|null, observable: ObservableId, phaseObsX?: ObservableId, phaseObsY?: ObservableId, left: number, top: number, sourceKind?: GraphSourceKind, measurementId?: string|null }} cfg
+   * @param {{ mode: GraphMode, bodyId: number|null, trackId?: number|null, observable: ObservableId, phaseObsX?: ObservableId, phaseObsY?: ObservableId, left: number, top: number, sourceKind?: GraphSourceKind, measurementId?: string|null, measurementIdY?: string|null }} cfg
    */
   constructor(host, cfg) {
     this.host = host;
@@ -926,6 +1026,9 @@ class GraphWindow {
     this.sourceKind = cfg.sourceKind === 'measurement' ? 'measurement' : 'body';
     /** @type {string|null} */
     this.measurementId = cfg.measurementId ?? null;
+    /** Second measurement for parametric (X–Y) plots. */
+    /** @type {string|null} */
+    this.measurementIdY = cfg.measurementIdY ?? null;
     /** Unwrap θ past ±π in time / phase plots (body observable). */
     this.unwrapAngle = false;
     this._selectedIndex = null;
@@ -1054,17 +1157,22 @@ class GraphWindow {
     this._unwrapWrap.append(this._unwrapCheck, document.createTextNode(' Unwrap θ'));
 
     this._phaseObsWrap = _el('span', { className: 'graph-phase-obs-wrap', hidden: true });
-    this._obsXSelect = _el('select', { className: 'graph-select graph-select-math', title: 'Phase x-axis', 'aria-label': 'Phase x-axis' });
-    this._obsYSelect = _el('select', { className: 'graph-select graph-select-math', title: 'Phase y-axis', 'aria-label': 'Phase y-axis' });
-    for (const o of GRAPH_OBSERVABLES) {
-      this._obsXSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
-      this._obsYSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
-    }
+    this._obsXSelect = _el('select', { className: 'graph-select graph-select-math', title: 'X-axis', 'aria-label': 'X-axis' });
+    this._obsYSelect = _el('select', { className: 'graph-select graph-select-math', title: 'Y-axis', 'aria-label': 'Y-axis' });
+    /** @type {'body'|'measurement'|null} What the X/Y selects currently list. */
+    this._phaseSelectKind = null;
+    this._fillBodyPhaseObsSelects();
     this._obsXSelect.value = this.phaseObsX;
     this._obsYSelect.value = this.phaseObsY;
     const onPhaseObsChange = () => {
-      this.phaseObsX = /** @type {ObservableId} */ (this._obsXSelect.value);
-      this.phaseObsY = /** @type {ObservableId} */ (this._obsYSelect.value);
+      if (this.sourceKind === 'measurement' && this.mode === 'phase') {
+        this.measurementId = this._obsXSelect.value || null;
+        this.measurementIdY = this._obsYSelect.value || null;
+        if (this.measurementId) this._bodySelect.value = `meas:${this.measurementId}`;
+      } else {
+        this.phaseObsX = /** @type {ObservableId} */ (this._obsXSelect.value);
+        this.phaseObsY = /** @type {ObservableId} */ (this._obsYSelect.value);
+      }
       this._syncUnwrapChrome();
       this._selectedIndex = null;
       this._clearFit();
@@ -1099,8 +1207,9 @@ class GraphWindow {
       this._phaseOverlay = v === 'contour' || v === 'off' ? v : 'vectors';
       if (this.mode === 'phase') this._redrawOnly();
     });
+    this._phaseBgLabel = _el('label', { className: 'graph-field-label' }, 'Bg');
     this._phaseObsWrap.append(
-      _el('label', { className: 'graph-field-label' }, 'Bg'),
+      this._phaseBgLabel,
       this._phaseOverlaySelect,
     );
 
@@ -1137,7 +1246,7 @@ class GraphWindow {
     this._phaseBtn = _el('button', {
       type: 'button',
       className: 'graph-fit-btn graph-fit-btn-muted graph-phase-btn',
-      title: 'Phase portrait — plot position vs momentum (1 DOF)',
+      title: 'Parametric / phase portrait — plot one quantity vs another',
     }, 'Phase');
     this._phaseBtn.addEventListener('click', () => {
       this.setMode(this.mode === 'phase' ? 'time' : 'phase');
@@ -1296,19 +1405,19 @@ class GraphWindow {
    */
   setMode(mode) {
     if (mode !== 'time' && mode !== 'phase' && mode !== 'sweep') return;
-    if (mode === 'phase' && !this._trackIsOneDof()) return;
+    if (mode === 'phase' && !this._canEnterPhase()) return;
     if (this.mode === mode) {
       this._applyModeChrome();
       return;
     }
-    if (mode === 'phase' && this.sourceKind === 'measurement') {
-      this.sourceKind = 'body';
-      this.measurementId = null;
-    }
     if (mode === 'phase') {
-      this._inferPhaseAxes();
-      if (this._obsXSelect) this._obsXSelect.value = this.phaseObsX;
-      if (this._obsYSelect) this._obsYSelect.value = this.phaseObsY;
+      if (this.sourceKind === 'measurement') {
+        this._ensureMeasPhasePair();
+      } else {
+        this._inferPhaseAxes();
+        if (this._obsXSelect) this._obsXSelect.value = this.phaseObsX;
+        if (this._obsYSelect) this._obsYSelect.value = this.phaseObsY;
+      }
       const h = Math.max(this.el.offsetHeight, 420);
       this.el.style.height = `${h}px`;
     }
@@ -1335,35 +1444,46 @@ class GraphWindow {
     const isSweep = this.mode === 'sweep';
     let isPhase = this.mode === 'phase';
     const isMeas = this.sourceKind === 'measurement';
-    const canPhase = this.sourceKind === 'body' && this.trackId != null && this._trackIsOneDof();
+    const canPhase = this._canEnterPhase();
     if (isPhase && !canPhase) {
       this.mode = 'time';
       isPhase = false;
       this._clearFit();
     }
+    if (isPhase && isMeas) this._ensureMeasPhasePair();
+    this._syncPhaseAxisSelects();
     this.el.classList.toggle('graph-window-sweep', isSweep);
     this.el.classList.toggle('graph-window-phase', isPhase);
     this.el.setAttribute('aria-label', isSweep
       ? 'Parameter sweep graph'
       : isPhase
-        ? 'Phase portrait graph'
+        ? (isMeas ? 'Parametric measurement graph' : 'Phase portrait graph')
         : 'Observable graph');
     if (this._obsSelect) this._obsSelect.disabled = isSweep || isMeas || isPhase;
     if (this._obsLabel) this._obsLabel.hidden = isMeas || isPhase;
     if (this._obsSelect) this._obsSelect.hidden = isMeas || isPhase;
-    if (this._phaseObsWrap) this._phaseObsWrap.hidden = !isPhase || isMeas;
-    if (this._phaseBoundsWrap) this._phaseBoundsWrap.hidden = !isPhase || isMeas;
+    if (this._phaseObsWrap) this._phaseObsWrap.hidden = !isPhase;
+    if (this._phaseBoundsWrap) this._phaseBoundsWrap.hidden = !isPhase;
+    const showPhaseBg = isPhase && !isMeas;
+    if (this._phaseBgLabel) this._phaseBgLabel.hidden = !showPhaseBg;
+    if (this._phaseOverlaySelect) this._phaseOverlaySelect.hidden = !showPhaseBg;
     this._syncUnwrapChrome();
     if (this._phaseBtn) {
-      this._phaseBtn.hidden = isMeas;
+      this._phaseBtn.hidden = isSweep;
       this._phaseBtn.disabled = !canPhase;
       this._phaseBtn.classList.toggle('active', isPhase);
-      this._phaseBtn.textContent = isPhase ? 'Time' : 'Phase';
+      if (isPhase) this._phaseBtn.textContent = 'Time';
+      else if (isMeas) this._phaseBtn.textContent = 'Parametric';
+      else this._phaseBtn.textContent = 'Phase';
       this._phaseBtn.title = isPhase
         ? 'Switch to time series plot'
-        : canPhase
-          ? 'Phase portrait — conjugate position vs momentum (1 DOF)'
-          : 'Phase portrait requires a 1-DOF body (e.g. pendulum, spring–mass)';
+        : isMeas
+          ? (canPhase
+            ? 'Parametric plot — one measurement vs another (e.g. θ₁ vs θ₂)'
+            : 'Need at least two measurements for a parametric plot')
+          : canPhase
+            ? 'Phase portrait — conjugate position vs momentum (1 DOF)'
+            : 'Phase portrait requires a 1-DOF body (e.g. pendulum, spring–mass)';
     }
     if (this._fitBar) this._fitBar.hidden = isPhase;
     if (this._showTimeBtn) this._showTimeBtn.hidden = !isSweep;
@@ -1379,13 +1499,24 @@ class GraphWindow {
   /** Show Unwrap θ when plotting pendulum angle (time or phase). */
   _syncUnwrapChrome() {
     if (!this._unwrapWrap) return;
-    const isMeas = this.sourceKind === 'measurement';
-    const isSweep = this.mode === 'sweep';
+    if (this.mode === 'sweep') {
+      this._unwrapWrap.hidden = true;
+      return;
+    }
+    if (this.sourceKind === 'measurement') {
+      // Parametric: optional unwrap past ±180°. Time series uses measurement.continuous.
+      const show = this.mode === 'phase' && (
+        this._selectedMeasurement()?.kind === 'angle'
+        || this._selectedMeasurementY()?.kind === 'angle'
+      );
+      this._unwrapWrap.hidden = !show;
+      if (this._unwrapCheck) this._unwrapCheck.checked = this.unwrapAngle;
+      return;
+    }
     const wantsTheta = this.mode === 'phase'
       ? (this.phaseObsX === 'theta' || this.phaseObsY === 'theta')
       : this.observable === 'theta';
-    const show = !isMeas && !isSweep && wantsTheta;
-    this._unwrapWrap.hidden = !show;
+    this._unwrapWrap.hidden = !wantsTheta;
     if (this._unwrapCheck) this._unwrapCheck.checked = this.unwrapAngle;
   }
 
@@ -1394,6 +1525,77 @@ class GraphWindow {
     if (this.sourceKind !== 'body' || this.trackId == null) return false;
     const engine = this.host._opts.getEngine?.();
     return !!(engine && trackIsOneDof(engine, this.trackId));
+  }
+
+  /** @returns {object[]} */
+  _listMeasurements() {
+    return this.host._opts.listMeasurements?.()
+      ?? this.host._opts.getBaselineScene?.()?.measurements
+      ?? [];
+  }
+
+  /** @returns {boolean} */
+  _canMeasurementParametric() {
+    return this._listMeasurements().filter(m => m?.id).length >= 2;
+  }
+
+  /** Body 1-DOF phase portrait or measurement×measurement parametric. */
+  _canEnterPhase() {
+    if (this.sourceKind === 'measurement') return this._canMeasurementParametric();
+    return this._trackIsOneDof();
+  }
+
+  _fillBodyPhaseObsSelects() {
+    if (!this._obsXSelect || !this._obsYSelect) return;
+    this._obsXSelect.innerHTML = '';
+    this._obsYSelect.innerHTML = '';
+    for (const o of GRAPH_OBSERVABLES) {
+      this._obsXSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
+      this._obsYSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
+    }
+    this._phaseSelectKind = 'body';
+  }
+
+  _fillMeasPhaseObsSelects() {
+    if (!this._obsXSelect || !this._obsYSelect) return;
+    const measurements = this._listMeasurements().filter(m => m?.id);
+    this._obsXSelect.innerHTML = '';
+    this._obsYSelect.innerHTML = '';
+    for (const m of measurements) {
+      const unit = m.kind === 'length' ? 'm' : '°';
+      const name = `${measurementDisplayLabel(m)} (${unit})`;
+      this._obsXSelect.appendChild(_el('option', { value: m.id }, name));
+      this._obsYSelect.appendChild(_el('option', { value: m.id }, name));
+    }
+    this._phaseSelectKind = 'measurement';
+  }
+
+  /** Keep X/Y selects populated for body phase vs measurement parametric. */
+  _syncPhaseAxisSelects() {
+    if (!this._obsXSelect || this.mode !== 'phase') return;
+    if (this.sourceKind === 'measurement') {
+      this._fillMeasPhaseObsSelects();
+      if (this.measurementId) this._obsXSelect.value = this.measurementId;
+      if (this.measurementIdY) this._obsYSelect.value = this.measurementIdY;
+    } else {
+      if (this._phaseSelectKind !== 'body') this._fillBodyPhaseObsSelects();
+      this._obsXSelect.value = this.phaseObsX;
+      this._obsYSelect.value = this.phaseObsY;
+    }
+  }
+
+  /** Ensure measurementId / measurementIdY form a valid distinct pair. */
+  _ensureMeasPhasePair() {
+    const measurements = this._listMeasurements().filter(m => m?.id);
+    if (measurements.length < 2) return;
+    if (!this.measurementId || !measurements.some(m => m.id === this.measurementId)) {
+      this.measurementId = measurements[0].id;
+    }
+    if (!this.measurementIdY
+      || this.measurementIdY === this.measurementId
+      || !measurements.some(m => m.id === this.measurementIdY)) {
+      this.measurementIdY = measurements.find(m => m.id !== this.measurementId)?.id ?? null;
+    }
   }
 
   /** Pick conjugate position/momentum axes from the current time-series observable. */
@@ -1440,22 +1642,29 @@ class GraphWindow {
 
   _onBodyChange() {
     const opt = this._bodySelect.selectedOptions[0];
+    const wasPhase = this.mode === 'phase';
     if (!opt || opt.value === '') {
       this.bodyId = null;
       this.trackId = null;
       this.sourceKind = 'body';
       this.measurementId = null;
+      this.measurementIdY = null;
     } else if (opt.dataset.kind === 'measurement' || opt.value.startsWith('meas:')) {
       this.sourceKind = 'measurement';
       this.measurementId = opt.dataset.measId || opt.value.slice(5);
       this.bodyId = null;
       this.trackId = null;
+      if (wasPhase) this._ensureMeasPhasePair();
     } else {
       this.sourceKind = 'body';
       this.measurementId = null;
+      this.measurementIdY = null;
       this.trackId = Number(opt.value);
       const hostId = opt.dataset.hostId != null ? Number(opt.dataset.hostId) : this.trackId;
       this.bodyId = hostId;
+    }
+    if (wasPhase && !this._canEnterPhase()) {
+      this.mode = 'time';
     }
     this._applyModeChrome();
     this._selectedIndex = null;
@@ -1520,6 +1729,20 @@ class GraphWindow {
     if (fromLive) return fromLive;
     const baseline = doc ?? this.host._opts.getBaselineScene?.();
     return (baseline?.measurements ?? []).find(m => m.id === this.measurementId) ?? null;
+  }
+
+  /**
+   * Y-axis measurement for parametric plots.
+   * @param {object|null} [doc]
+   * @returns {object|null}
+   */
+  _selectedMeasurementY(doc = null) {
+    if (!this.measurementIdY) return null;
+    const live = this.host._opts.listMeasurements?.() ?? [];
+    const fromLive = live.find(m => m.id === this.measurementIdY);
+    if (fromLive) return fromLive;
+    const baseline = doc ?? this.host._opts.getBaselineScene?.();
+    return (baseline?.measurements ?? []).find(m => m.id === this.measurementIdY) ?? null;
   }
 
   _buildFitBar() {
@@ -1679,6 +1902,9 @@ class GraphWindow {
 
   _currentFitKey() {
     if (this.mode === 'sweep') return `sweep:${this._indepSelect?.value}:${this._depSelect?.value}`;
+    if (this.mode === 'phase' && this.sourceKind === 'measurement') {
+      return `phase:meas:${this.measurementId}:${this.measurementIdY}`;
+    }
     if (this.mode === 'phase') return `phase:${this.trackId}:${this.phaseObsX}:${this.phaseObsY}`;
     if (this.sourceKind === 'measurement') return `time:meas:${this.measurementId}`;
     return `time:${this.trackId}:${this.observable}`;
@@ -2191,6 +2417,7 @@ class GraphWindow {
       ?? [];
     const prevTrack = this.trackId;
     const prevMeas = this.measurementId;
+    const prevMeasY = this.measurementIdY;
     const prevKind = this.sourceKind;
     this._bodySelect.innerHTML = '';
 
@@ -2200,6 +2427,7 @@ class GraphWindow {
       this.trackId = null;
       this.sourceKind = 'body';
       this.measurementId = null;
+      this.measurementIdY = null;
       return;
     }
 
@@ -2268,9 +2496,13 @@ class GraphWindow {
       && measurements.some(m => m.id === prevMeas)) {
       this.sourceKind = 'measurement';
       this.measurementId = prevMeas;
+      this.measurementIdY = prevMeasY && measurements.some(m => m.id === prevMeasY)
+        ? prevMeasY
+        : null;
       this.bodyId = null;
       this.trackId = null;
       this._bodySelect.value = `meas:${prevMeas}`;
+      if (this.mode === 'phase') this._ensureMeasPhasePair();
       this._applyModeChrome();
       return;
     }
@@ -2279,6 +2511,7 @@ class GraphWindow {
     if (stillThere) {
       this.sourceKind = 'body';
       this.measurementId = null;
+      this.measurementIdY = null;
       this.trackId = prevTrack;
       const entry = bodies.find(b => (b.trackId ?? b.id) === prevTrack);
       this.bodyId = entry?.id ?? prevTrack;
@@ -2293,6 +2526,7 @@ class GraphWindow {
     if (host) {
       this.sourceKind = 'body';
       this.measurementId = null;
+      this.measurementIdY = null;
       this.bodyId = host.id;
       this.trackId = host.trackId ?? host.id;
       this._bodySelect.value = String(this.trackId);
@@ -2302,6 +2536,7 @@ class GraphWindow {
       this.bodyId = null;
       this.trackId = null;
       this._bodySelect.value = `meas:${this.measurementId}`;
+      if (this.mode === 'phase') this._ensureMeasPhasePair();
     }
     this._applyModeChrome();
   }
@@ -2656,6 +2891,50 @@ class GraphWindow {
     this._clearFit();
     this._syncBodyOptions();
     const frames = this.host._opts.getFrames();
+    const doc = this.host._opts.getBaselineScene?.();
+
+    if (this.sourceKind === 'measurement') {
+      this._ensureMeasPhasePair();
+      const mx = this._selectedMeasurement(doc);
+      const my = this._selectedMeasurementY(doc);
+      const xLabel = mx ? measurementDisplayLabel(mx) : (this.measurementId || 'x');
+      const yLabel = my ? measurementDisplayLabel(my) : (this.measurementIdY || 'y');
+      this._setTitle(`${xLabel} vs ${yLabel}`);
+
+      if (!mx || !my || !frames.length) {
+        this._series = [];
+        this._yExtrema = null;
+        this._dataBounds = null;
+        this._view = null;
+        this._autoView = true;
+        this._drawEmpty(frames.length ? 'Select two measurements' : 'No recorded frames — run a capture');
+        return;
+      }
+
+      this._series = buildMeasurementPhaseSeries(frames, mx, my, doc, {
+        unwrapAngle: this.unwrapAngle,
+      });
+      if (!this._series.length) {
+        this._yExtrema = null;
+        this._dataBounds = null;
+        this._view = null;
+        this._autoView = true;
+        this._drawEmpty('Measurements could not be resolved in recording');
+        return;
+      }
+
+      this._yExtrema = _seriesYExtremumIndices(this._series);
+      const bounds = seriesBounds(this._series);
+      this._dataBounds = bounds;
+      if (this._autoView || !this._view) {
+        this._view = this._dataBounds ? { ...this._dataBounds } : null;
+        this._autoView = true;
+      }
+      this._syncPhaseBoundsInputs();
+      this._redrawOnly();
+      return;
+    }
+
     const xMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsX) ?? GRAPH_OBSERVABLES[0];
     const yMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsY)
       ?? GRAPH_OBSERVABLES.find(o => o.id === 'px')
@@ -2712,17 +2991,8 @@ class GraphWindow {
         xLabel: this._sweepXLabel,
       }, this._view);
     } else if (this.mode === 'phase') {
-      const xMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsX) ?? GRAPH_OBSERVABLES[0];
-      const yMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsY)
-        ?? GRAPH_OBSERVABLES.find(o => o.id === 'px')
-        ?? GRAPH_OBSERVABLES[2];
       const scrub = this.host._opts.getScrubIndex();
-      this._drawPlot(this._series, scrub, {
-        id: `phase:${this.phaseObsX}:${this.phaseObsY}`,
-        label: yMeta.label,
-        unit: yMeta.unit,
-        xLabel: `${xMeta.label} (${xMeta.unit})`,
-      }, this._view);
+      this._drawPlot(this._series, scrub, this._obsMetaForDraw(), this._view);
     } else if (this.sourceKind === 'measurement') {
       const m = this._selectedMeasurement();
       const scrub = this.host._opts.getScrubIndex();
@@ -2758,7 +3028,11 @@ class GraphWindow {
     if (this.mode === 'sweep') return 'Parameter sweeps cannot be exported as frame videos';
     const frames = this.host._opts.getFrames?.() ?? [];
     if (!frames.length) return 'No recorded frames';
-    if (!this._series.length) return 'No plot data';
+    if (!this._series.length) {
+      return this.mode === 'phase'
+        ? 'No parametric / phase plot data'
+        : 'No plot data';
+    }
     return '';
   }
 
@@ -2770,6 +3044,20 @@ class GraphWindow {
 
   /** @returns {{ id: string, label: string, unit: string, xLabel?: string }} */
   _obsMetaForDraw() {
+    if (this.mode === 'phase' && this.sourceKind === 'measurement') {
+      const mx = this._selectedMeasurement();
+      const my = this._selectedMeasurementY();
+      const xLabel = mx ? measurementDisplayLabel(mx) : (this.measurementId || 'x');
+      const yLabel = my ? measurementDisplayLabel(my) : (this.measurementIdY || 'y');
+      const xUnit = mx?.kind === 'length' ? 'm' : '°';
+      const yUnit = my?.kind === 'length' ? 'm' : '°';
+      return {
+        id: `phase:meas:${this.measurementId}:${this.measurementIdY}`,
+        label: yLabel,
+        unit: yUnit,
+        xLabel: `${xLabel} (${xUnit})`,
+      };
+    }
     if (this.mode === 'phase') {
       const xMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsX) ?? GRAPH_OBSERVABLES[0];
       const yMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsY)
@@ -2822,12 +3110,22 @@ class GraphWindow {
    * @param {(done: number, total: number) => void} [opts.onProgress]
    */
   async exportVideo({ frames, width, height, fps, animMode, onProgress }) {
+    if (this.mode === 'sweep') {
+      throw new Error(this.exportBlockedReason() || 'Sweep graphs cannot be exported as video');
+    }
+    this.refresh();
     if (!this.canExportVideo()) {
       throw new Error(this.exportBlockedReason() || 'Graph cannot be exported');
     }
-    this.refresh();
     if (!this._view && this._dataBounds) this._view = { ...this._dataBounds };
     if (!this._view) throw new Error('Graph has no view bounds');
+    if (!this._series.length) {
+      throw new Error(
+        this.mode === 'phase'
+          ? 'Parametric / phase graph has no plot data to export'
+          : 'Graph has no plot data to export',
+      );
+    }
 
     const plotW = width;
     const plotH = height;
@@ -2856,6 +3154,8 @@ class GraphWindow {
       this._plotWrap.style.width = savedStyle.width;
       this._plotWrap.style.height = savedStyle.height;
       this._plotWrap.style.flex = savedStyle.flex;
+      this._svg.removeAttribute('width');
+      this._svg.removeAttribute('height');
       this._redrawOnly();
     }
   }
@@ -2895,6 +3195,13 @@ class GraphWindow {
     const padOverride = forExport ? exportPadForScale(ink) : null;
     const { W, H, iw, ih, pad } = this._plotGeom(plotOverride, padOverride);
     this._svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    if (forExport) {
+      this._svg.setAttribute('width', String(W));
+      this._svg.setAttribute('height', String(H));
+    } else {
+      this._svg.removeAttribute('width');
+      this._svg.removeAttribute('height');
+    }
     this._svg.innerHTML = '';
     this._obsMeta = obsMeta;
     this._scrubIndex = scrubIndex;
@@ -3023,12 +3330,15 @@ class GraphWindow {
       this._drawAxisTitles(obsMeta, { W, H, iw, ih, pad, isSweep, isPhase, ink });
     }
 
-    const content = _svg('g', { 'clip-path': `url(#${clipId})` });
-    if (isPhase && this._phaseOverlay === 'vectors') {
+    const content = forExport
+      ? _svg('g')
+      : _svg('g', { 'clip-path': `url(#${clipId})` });
+    const isBodyPhase = isPhase && this.sourceKind !== 'measurement';
+    if (isBodyPhase && this._phaseOverlay === 'vectors') {
       this._drawPhaseVectorField(content, series, {
         tMin, tMax, vMin, vMax, xOf, yOf, iw, ih, ink,
       });
-    } else if (isPhase && this._phaseOverlay === 'contour') {
+    } else if (isBodyPhase && this._phaseOverlay === 'contour') {
       this._drawPhaseContourField(content, series, {
         tMin, tMax, vMin, vMax, xOf, yOf, iw, ih, ink,
       });
@@ -3110,7 +3420,7 @@ class GraphWindow {
     this._svg.appendChild(content);
 
     const scrubPt = !isSweep && plotScrub >= 0
-      ? (series.find(p => p.i === plotScrub) ?? null)
+      ? seriesPointNearFrame(series, plotScrub)
       : null;
     const selPt = !forExport && this._selectedIndex != null
       ? series.find(p => p.i === this._selectedIndex)
@@ -3297,16 +3607,7 @@ class GraphWindow {
     }
 
     if (this.mode === 'phase') {
-      const xMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsX) ?? GRAPH_OBSERVABLES[0];
-      const yMeta = GRAPH_OBSERVABLES.find(o => o.id === this.phaseObsY)
-        ?? GRAPH_OBSERVABLES.find(o => o.id === 'px')
-        ?? GRAPH_OBSERVABLES[2];
-      const obsMeta = {
-        id: `phase:${this.phaseObsX}:${this.phaseObsY}`,
-        label: yMeta.label,
-        unit: yMeta.unit,
-        xLabel: `${xMeta.label} (${xMeta.unit})`,
-      };
+      const obsMeta = this._obsMetaForDraw();
       const scrub = this.host._opts.getScrubIndex();
       const scrubPt = this._series.find(p => p.i === scrub) ?? null;
       const selPt = this._selectedIndex != null
@@ -3364,7 +3665,7 @@ class GraphWindow {
       y: H - Math.round(10 * ink),
       'text-anchor': 'middle',
     });
-    xEl.textContent = xTitle;
+    setSvgAxisTitle(xEl, xTitle);
     titles.appendChild(xEl);
 
     const yCx = Math.round(16 * ink);
@@ -3376,7 +3677,7 @@ class GraphWindow {
       'dominant-baseline': 'middle',
       transform: `rotate(-90 ${yCx} ${yCy})`,
     });
-    yEl.textContent = yTitle;
+    setSvgAxisTitle(yEl, yTitle);
     titles.appendChild(yEl);
 
     this._svg.appendChild(titles);

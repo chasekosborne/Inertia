@@ -23,7 +23,8 @@
 
 import Matter from 'matter-js';
 import { createPointMass, createBall, createBox, createWedge, createAnchor, createGround,
-         createString, wedgeAABBCenterWorld, setWedgeAABBCenter, wedgeContainsWorldPoint } from '../physics/bodies.js';
+         createString, wedgeAABBCenterWorld, setWedgeAABBCenter, snapWedgeToGrid,
+         wedgeContainsWorldPoint } from '../physics/bodies.js';
 import { createRod, createSpring } from '../physics/constraints.js';
 import {
   createFreeRope, ropeSegmentCountForLength, ropeSelection, listRopeSegments, clampRopeSegments,
@@ -562,8 +563,14 @@ export class InteractionHandler {
           this._dragOffY = pt.y - body.position.y;
         }
         this._pendulumDrag = findPendulumGuidance(this.engine, body);
-        // Lower links ride with this body so their lengths stay fixed (double pendulum).
-        this._hangingChain = captureHangingChain(this.engine, body);
+        // Descendants ride with this body (skip the parent link so we do not
+        // pull the pivot bob when dragging a lower pendulum mass).
+        const skipIds = this._pendulumDrag?.constraintId != null
+          ? [this._pendulumDrag.constraintId]
+          : [];
+        this._hangingChain = captureHangingChain(this.engine, body, {
+          skipConstraintIds: skipIds,
+        });
         this._selectBodyHit(hit);
       } else if (c) {
         this._onSelect({ type: 'constraint', id: c.id });
@@ -617,7 +624,10 @@ export class InteractionHandler {
     }
 
     if (['string', 'rod', 'spring'].includes(this._mode)) {
-      const attach = findConstraintAttachTarget(this.engine, pt.x, pt.y, { hitPx: 30 });
+      const attach = findConstraintAttachTarget(this.engine, pt.x, pt.y, {
+        hitPx: 30,
+        snapGrid: this._snapEnabled,
+      });
       if (attach) {
         this._constraintSrc = attach.body;
         this._constraintSrcLocal = { ...attach.local };
@@ -755,13 +765,19 @@ export class InteractionHandler {
       if (this.engine.running) return;
       let nx = pt.x - this._dragOffX;
       let ny = pt.y - this._dragOffY;
-      if (this._snapEnabled) {
-        nx = snapWorldCoord(nx, true);
-        ny = snapWorldCoord(ny, true);
-      }
       if (this._dragging._newtonType === 'wedge') {
+        // Place from the pointer, then grid-snap edges (cardinal) or AABB centre.
+        if (!this._snapEnabled) {
+          nx = Math.round(nx);
+          ny = Math.round(ny);
+        }
         setWedgeAABBCenter(this._dragging, nx, ny);
+        snapWedgeToGrid(this._dragging, this._snapEnabled);
       } else {
+        if (this._snapEnabled) {
+          nx = snapWorldCoord(nx, true);
+          ny = snapWorldCoord(ny, true);
+        }
         Body.setPosition(this._dragging, { x: nx, y: ny });
       }
       Body.setVelocity(this._dragging, { x: 0, y: 0 });
@@ -806,9 +822,10 @@ export class InteractionHandler {
       const hover = findConstraintAttachTarget(this.engine, pt.x, pt.y, {
         excludeBodyId: src.id,
         hitPx: 30,
+        snapGrid: this._snapEnabled,
       });
-      const bx = hover ? hover.world.x : pt.x;
-      const by = hover ? hover.world.y : pt.y;
+      const bx = hover ? hover.world.x : (this._snapEnabled ? snapWorldCoord(pt.x, true) : pt.x);
+      const by = hover ? hover.world.y : (this._snapEnabled ? snapWorldCoord(pt.y, true) : pt.y);
       const len = Math.hypot(bx - ax, by - ay);
 
       if (this._mode === 'spring') {
@@ -1033,6 +1050,11 @@ export class InteractionHandler {
     }
 
     if (this._rotating) {
+      const body = this._rotating.body;
+      if (body?._newtonType === 'wedge' && this._snapEnabled) {
+        snapWedgeToGrid(body, true);
+        snapRopePins(this.engine);
+      }
       this._rotating = null;
       this._ignoreNextClick = true;
       return;
@@ -1044,6 +1066,7 @@ export class InteractionHandler {
       const dest = findConstraintAttachTarget(this.engine, pt.x, pt.y, {
         excludeBodyId: src.id,
         hitPx: 30,
+        snapGrid: this._snapEnabled,
       });
       if (dest && dest.body.id !== src.id) {
         const a = this._constraintDown ?? { x: src.position.x, y: src.position.y };
@@ -1292,6 +1315,7 @@ export class InteractionHandler {
     return findConstraintAttachTarget(this.engine, pt.x, pt.y, {
       excludeBodyId,
       hitPx: 30,
+      snapGrid: this._snapEnabled,
     });
   }
 

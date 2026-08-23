@@ -4,7 +4,7 @@
  */
 
 /** Default zoom for blank / unframed scenes (world px → screen px). */
-export const DEFAULT_CAMERA_SCALE = 4;
+export const DEFAULT_CAMERA_SCALE = 3;
 
 export class Camera {
   constructor() {

@@ -1,0 +1,177 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Double pendulum",
+    "source": "file"
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "bodies": [
+    {
+      "id": "anchor_1",
+      "type": "anchor",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "radius": 0.06
+      }
+    },
+    {
+      "id": "bob1",
+      "type": "ball",
+      "position": {
+        "x": 0.3078181289931019,
+        "y": 0.8457233587073175
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "radius": 0.08
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    },
+    {
+      "id": "bob2",
+      "type": "ball",
+      "position": {
+        "x": 0.6156362579862038,
+        "y": 1.691446717414635
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "radius": 0.08
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "rod_1",
+      "type": "rod",
+      "bodyA": "anchor_1",
+      "bodyB": "bob1",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.9,
+      "stiffness": 1,
+      "dampingMatter": 0
+    },
+    {
+      "id": "rod_2",
+      "type": "rod",
+      "bodyA": "bob1",
+      "bodyB": "bob2",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 0.9,
+      "stiffness": 1,
+      "dampingMatter": 0
+    }
+  ],
+  "measurements": [
+    {
+      "id": "theta1",
+      "kind": "angle",
+      "vertex": {
+        "kind": "body",
+        "body": "anchor_1"
+      },
+      "a": {
+        "kind": "ray",
+        "body": "anchor_1",
+        "angleDeg": -90
+      },
+      "b": {
+        "kind": "body",
+        "body": "bob1"
+      },
+      "label": "θ_1"
+    },
+    {
+      "id": "theta2",
+      "kind": "angle",
+      "vertex": {
+        "kind": "body",
+        "body": "bob1"
+      },
+      "a": {
+        "kind": "ray",
+        "body": "bob1",
+        "angleDeg": -90
+      },
+      "b": {
+        "kind": "body",
+        "body": "bob2"
+      },
+      "label": "θ_2"
+    }
+  ],
+  "labels": [],
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "center": {
+      "x": 0.7300483469738254,
+      "y": 0.7257960937565788
+    },
+    "view": {
+      "width": 5.659311055053637,
+      "height": 3.595791896112435
+    },
+    "followBody": null
+  }
+}

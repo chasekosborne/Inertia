@@ -197,10 +197,10 @@ export function exportAnimatedSVG(frames, opts = {}) {
       const s  = circleRingStrokePx(r);
       const hollow = first.hollow === true;
       const cx = el('circle', {
-        cx: 0, cy: 0, r: Math.max(0.5, r - s / 2),
-        fill: hollow ? 'none' : BOX_FILL_HEX,
-        stroke: hollow ? INK : BOX_STROKE_HEX,
-        'stroke-width': s,
+        cx: 0, cy: 0, r: hollow ? Math.max(0.5, r - s / 2) : r,
+        fill: hollow ? 'none' : INK,
+        stroke: hollow ? INK : 'none',
+        'stroke-width': hollow ? s : 0,
       });
 
       const txAnim = el('animateTransform', {
@@ -280,7 +280,7 @@ export function exportAnimatedSVG(frames, opts = {}) {
       const W = first.baseWidth ?? first.bWidth ?? 40;
       const H = first.bHeight ?? 40;
       const s = wedgeOutlineStrokePx(W, H);
-      const verts = insetPolygonVerts(wedgeVertsCentred(W, H), s / 2);
+      const verts = insetPolygonVerts(wedgeVertsCentred(W, H, first.flipX === true, first.flipY === true), s / 2);
       const poly = el('polygon', {
         points: verts.map(v => `${v.x},${v.y}`).join(' '),
         fill: 'none',
@@ -313,9 +313,9 @@ export function exportAnimatedSVG(frames, opts = {}) {
         if ((p.type === 'point-mass' || p.type === 'ball') && p.radius) {
           wrapper.appendChild(el('circle', {
             cx: lx, cy: ly, r: p.radius,
-            fill: p.type === 'ball' ? INK : BOX_FILL_HEX,
-            stroke: p.type === 'ball' ? 'none' : BOX_STROKE_HEX,
-            'stroke-width': p.type === 'ball' ? 0 : 1,
+            fill: INK,
+            stroke: 'none',
+            'stroke-width': 0,
           }));
         } else {
           const w = p.width ?? 40;

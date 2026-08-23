@@ -12,14 +12,13 @@ import {
   getForcePxPerN, getVelocityPxPerMs, getWeightPxPerKg,
 } from '../units.js';
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
-         wedgeVertsCentred, insetPolygonVerts, wedgeOutlineStrokePx } from '../physics/bodies.js';
-import { staticRestSlipMatter } from '../physics/friction.js';
-import { getAppliedForce, appliedForceMatterComponents } from '../physics/applied-force.js';
+         wedgeVertsCentred, wedgeOutlineStrokePx } from '../physics/bodies.js';
+import { getAppliedForce } from '../physics/applied-force.js';
 import { getAppliedTorque } from '../physics/applied-torque.js';
 import {
-  matterOmegaToDisplay,
+  bodySpinAngularMomentumSI,
   outOfPlaneGlyphRadius,
-  outOfPlaneOmegaGlyphRadius,
+  outOfPlaneLGlyphRadius,
 } from '../physics/angular.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { springPathProps } from './spring-path.js';
@@ -54,6 +53,10 @@ const STYLE = {
   // Velocity (kinematic, not a force): same world scale as the v₀ handle
   velColor:      '#2980b9',
   vectorMinLen:  6,
+  /** Min time a force/velocity label keeps its side before re-picking. */
+  vectorLabelHoldMs: 550,
+  /** Other side must beat current by at least this score to flip after hold. */
+  vectorLabelHysteresis: 0.85,
 };
 
 function el(tag, attrs = {}) {
@@ -120,6 +123,8 @@ export class SvgRenderer {
     this._onSelectCb  = null;
     /** @type {Array<object>} */
     this._vectorObstacles = [];
+    /** Sticky perp-side for vector labels: key → { side: 'a'|'b', until: number }. */
+    this._vectorLabelSide = new Map();
 
     this._buildDefs();
     this._buildLayers();
@@ -133,7 +138,12 @@ export class SvgRenderer {
     this._showGrid = v;
     this._gridLayer.style.display    = v ? '' : 'none';
   }
-  setShowVectors(v) { this._showVectors = v; this._vectorLayer.style.display  = v ? '' : 'none'; }
+  setShowVectors(v) {
+    this._showVectors = v;
+    const disp = v ? '' : 'none';
+    this._vectorLayer.style.display = disp;
+    if (this._angularVectorLayer) this._angularVectorLayer.style.display = disp;
+  }
   setShowTraces(v)  {
     this._showTraces = v;
     this._traceLayer.style.display = v ? '' : 'none';
@@ -177,15 +187,16 @@ export class SvgRenderer {
     this._restackLayers();
   }
 
-  /** Preserve paint order: leaders → constraints → vectors → bodies → labels/measures → UI. */
+  /** Preserve paint order: leaders → constraints → bodies → planar F/v → angular L/τ → labels → UI. */
   _restackLayers() {
     for (const layer of [
       this._gridLayer,
       this._traceLayer,
       this._leaderLayer,
       this._constraintLayer,
-      this._vectorLayer,
       this._bodyLayer,
+      this._vectorLayer,
+      this._angularVectorLayer,
       this._labelLayer,
       this._interactionGhostLayer,
       this._measureLayer,
@@ -258,28 +269,8 @@ export class SvgRenderer {
     ceilHatch.appendChild(cLine);
     defs.appendChild(ceilHatch);
 
-    // Arrow marker: all forces (weight, friction, …)
-    const mkForce = el('marker', {
-      id: 'arrow-force', markerWidth: '6', markerHeight: '6',
-      refX: '5', refY: '3', orient: 'auto',
-    });
-    mkForce.appendChild(el('path', { d: 'M0,0 L0,6 L6,3 z', fill: STYLE.forceColor }));
-    defs.appendChild(mkForce);
-
-    const mkApplied = el('marker', {
-      id: 'arrow-applied', markerWidth: '6', markerHeight: '6',
-      refX: '5', refY: '3', orient: 'auto',
-    });
-    mkApplied.appendChild(el('path', { d: 'M0,0 L0,6 L6,3 z', fill: STYLE.forceColor }));
-    defs.appendChild(mkApplied);
-
-    // Arrow marker: velocity (kinematic)
-    const mkVel = el('marker', {
-      id: 'arrow-vel', markerWidth: '6', markerHeight: '6',
-      refX: '5', refY: '3', orient: 'auto',
-    });
-    mkVel.appendChild(el('path', { d: 'M0,0 L0,6 L6,3 z', fill: STYLE.velColor }));
-    defs.appendChild(mkVel);
+    // Force / velocity arrowheads are drawn as polygons in _drawVector (SVG
+    // marker-end is unreliable on short shafts and under camera transforms).
 
     this.svg.insertBefore(defs, this.svg.firstChild);
   }
@@ -303,8 +294,11 @@ export class SvgRenderer {
     this._leaderLayer     = this._addLayer('layer-leaders');
     this._leaderLayer.setAttribute('pointer-events', 'none');
     this._constraintLayer = this._addLayer('layer-constraints');
-    this._vectorLayer     = this._addLayer('layer-vectors');
     this._bodyLayer       = this._addLayer('layer-bodies');
+    // Planar F/v above fills so tips stay visible; L / τ above those at the COM.
+    this._vectorLayer     = this._addLayer('layer-vectors');
+    this._angularVectorLayer = this._addLayer('layer-angular-vectors');
+    this._angularVectorLayer.setAttribute('pointer-events', 'none');
     this._labelLayer      = this._addLayer('layer-labels');
 
     // Interaction previews (constraints, ground, …), non-interactive wrapper.
@@ -320,7 +314,10 @@ export class SvgRenderer {
 
     this._drawGrid();
 
-    if (!this._showVectors) this._vectorLayer.style.display  = 'none';
+    if (!this._showVectors) {
+      this._vectorLayer.style.display = 'none';
+      this._angularVectorLayer.style.display = 'none';
+    }
     if (!this._showTraces)  this._traceLayer.style.display   = 'none';
   }
 
@@ -473,12 +470,13 @@ export class SvgRenderer {
           const r = meta?.radius ?? part._radius ?? part.circleRadius ?? 10;
           const hollow = meta?.hollow === true || part._hollow === true;
           const s = circleRingStrokePx(r);
+          const inkFill = pType === 'ball' || pType === 'point-mass';
           g.appendChild(el('circle', {
             cx: part.position.x, cy: part.position.y,
-            r: Math.max(0.5, r - (hollow || pType === 'point-mass' ? s / 2 : 0)),
-            fill: (pType === 'ball') ? STYLE.ink : (hollow ? 'none' : BOX_FILL_HEX),
-            stroke: (pType === 'ball') ? 'none' : (hollow ? STYLE.ink : BOX_STROKE_HEX),
-            'stroke-width': pType === 'ball' ? 0 : s,
+            r: hollow ? Math.max(0.5, r - s / 2) : r,
+            fill: hollow ? 'none' : (inkFill ? STYLE.ink : BOX_FILL_HEX),
+            stroke: hollow ? STYLE.ink : (inkFill ? 'none' : BOX_STROKE_HEX),
+            'stroke-width': hollow || !inkFill ? s : 0,
             class: 'body-shape',
             'data-part-index': partIndex,
           }));
@@ -528,16 +526,16 @@ export class SvgRenderer {
         }));
         return;
       }
-      // Circle: filled box-grey by default, or hollow ring when body._hollow.
+      // Point: filled particle (ink); hollow ring when body._hollow.
       const r = body._radius ?? DEFAULT_CIRCLE_R;
       const s = circleRingStrokePx(r);
       const hollow = body._hollow === true;
       const circle = el('circle', {
-        cx: 0, cy: 0, r: Math.max(0.5, r - s / 2),
-        fill: hollow ? 'none' : BOX_FILL_HEX,
-        stroke: hollow ? STYLE.ink : BOX_STROKE_HEX,
-        'stroke-width': s,
-        class: hollow ? 'body-shape circle-ring' : 'body-shape circle-filled',
+        cx: 0, cy: 0, r: hollow ? Math.max(0.5, r - s / 2) : r,
+        fill: hollow ? 'none' : STYLE.ink,
+        stroke: hollow ? STYLE.ink : 'none',
+        'stroke-width': hollow ? s : 0,
+        class: hollow ? 'body-shape circle-ring' : 'body-shape point-body',
       });
       g.appendChild(circle);
     } else if (type === 'ball') {
@@ -581,19 +579,29 @@ export class SvgRenderer {
         g.appendChild(rect);
       }
     } else if (type === 'wedge') {
-      // Always hollow: outline only. Inset verts so the stroke’s outer edge
-      // matches the Matter triangle (same contract as boxes / circles).
+      // Hollow outline whose OUTER edge sits on the Matter triangle (grid-aligned).
+      // Clip the stroke to the triangle so only the inward half is painted — that
+      // way the outer edge stays on the physics bounds even if CSS tweaks stroke-width.
       const W = body._baseWidth ?? 40;
       const H = body._height ?? 40;
       const s = wedgeOutlineStrokePx(W, H);
-      const verts = insetPolygonVerts(wedgeVertsCentred(W, H), s / 2);
+      const { flipX, flipY } = body._wedgeFlipX || body._wedgeFlipY
+        ? { flipX: body._wedgeFlipX === true, flipY: body._wedgeFlipY === true }
+        : { flipX: false, flipY: false };
+      const verts = wedgeVertsCentred(W, H, flipX, flipY);
       const pts = verts.map(v => `${v.x},${v.y}`).join(' ');
+      const clipId = `wedge-clip-${body.id}`;
+      const clip = el('clipPath', { id: clipId });
+      clip.appendChild(el('polygon', { points: pts }));
+      g.appendChild(clip);
       g.appendChild(el('polygon', {
         points: pts,
         fill: 'none',
         stroke: STYLE.ink,
-        'stroke-width': s,
-        'stroke-linejoin': 'round',
+        'stroke-width': 2 * s,
+        'stroke-linejoin': 'miter',
+        'stroke-miterlimit': '8',
+        'clip-path': `url(#${clipId})`,
         class: 'body-shape wedge-body wedge-ring',
       }));
     } else if (type === 'anchor') {
@@ -827,7 +835,10 @@ export class SvgRenderer {
 
   _syncVectors(bodies) {
     this._vectorLayer.innerHTML = '';
+    if (this._angularVectorLayer) this._angularVectorLayer.innerHTML = '';
     this._vectorObstacles = this._collectVectorObstacles(bodies);
+    /** @type {Set<string>} */
+    const labelKeysSeen = new Set();
 
     for (const b of bodies) {
       if (b.isStatic) continue;
@@ -862,7 +873,10 @@ export class SvgRenderer {
         const gMag = Math.hypot(g.x, g.y) || 1;
         const wex  = px + (g.x / gMag) * wLen;
         const wey  = py + (g.y / gMag) * wLen;
-        this._drawVector(px, py, wex, wey, STYLE.forceColor, 'url(#arrow-force)', 'W');
+        this._drawVector(px, py, wex, wey, STYLE.forceColor, 'W', {
+          stickyKey: `${b.id}:W`,
+          _labelKeysSeen: labelKeysSeen,
+        });
       }
 
       // ── Applied pull F (blue): constant force at θ above +x ──
@@ -873,13 +887,20 @@ export class SvgRenderer {
         // Matter y-down: +θ (up) → negative y tip
         const fex = px + Math.cos(rad) * len;
         const fey = py - Math.sin(rad) * len;
-        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'url(#arrow-applied)', 'F');
+        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F', {
+          stickyKey: `${b.id}:F`,
+          _labelKeysSeen: labelKeysSeen,
+        });
       }
 
       // ── Friction (kinetic fₖ or static F_st) ──────────────────
-      const fFric = this._frictionDisplayVector(b, bodies);
+      const fFric = this._frictionDisplayVector(b);
       if (fFric) {
-        this._drawVector(px, py, px + fFric.x, py + fFric.y, STYLE.forceColor, 'url(#arrow-force)', fFric.label);
+        this._drawVector(
+          px, py, px + fFric.x, py + fFric.y,
+          STYLE.forceColor, fFric.label,
+          { stickyKey: `${b.id}:fric`, _labelKeysSeen: labelKeysSeen },
+        );
       }
 
       // ── Velocity v (blue, not a force): SI m/s → world px like v₀ handle
@@ -889,50 +910,60 @@ export class SvgRenderer {
         const vPx = getVelocityPxPerMs();
         const vex = px + vxMs * vPx;
         const vey = py - vyMs * vPx;
-        // Tip only when |v| ≥ 1 m/s: short shafts look better without a head.
-        this._drawVector(px, py, vex, vey, STYLE.velColor, 'url(#arrow-vel)', 'v', {
+        this._drawVector(px, py, vex, vey, STYLE.velColor, 'v', {
           minLen: 2,
-          showTip: speed >= 1,
+          stickyKey: `${b.id}:v`,
+          _labelKeysSeen: labelKeysSeen,
         });
       }
 
-      // ── Angular velocity ω (blue ⊙/⊗) at COM ──
-      let hasOmega = false;
+      // ── Spin angular momentum L (⊙/⊗) on top of the body fill ──
+      let hasL = false;
       const locked = b.inertia === Infinity || b._lockRotation === true;
       if (!locked) {
-        const omega = matterOmegaToDisplay(b.angularVelocity || 0);
-        hasOmega = Math.abs(omega) > 1e-3;
-        if (hasOmega) {
-          const r = outOfPlaneOmegaGlyphRadius(Math.abs(omega));
-          this._drawOutOfPlaneGlyph(px, py, Math.sign(omega), STYLE.velColor, r, 'ω');
+        const L = bodySpinAngularMomentumSI(b);
+        hasL = L != null && Math.abs(L) > 1e-6;
+        if (hasL) {
+          const r = outOfPlaneLGlyphRadius(Math.abs(L));
+          this._drawOutOfPlaneGlyph(px, py, Math.sign(L), STYLE.velColor, r, 'L', {
+            stickyKey: `${b.id}:L`,
+            _labelKeysSeen: labelKeysSeen,
+          });
         }
       }
       const tau = getAppliedTorque(b);
       if (tau != null && Math.abs(tau) > 1e-9) {
         const r = outOfPlaneGlyphRadius(Math.abs(tau), 3.5, 1.4, 8);
-        // Keep τ off the COM when ω is shown so the glyphs do not stack.
-        const ox = hasOmega ? -(r + 8) : 0;
-        const oy = hasOmega ? -(r + 5) : 0;
-        this._drawOutOfPlaneGlyph(px + ox, py + oy, Math.sign(tau), STYLE.forceColor, r, 'τ');
+        // Keep τ off the COM when L is shown so the glyphs do not stack.
+        const ox = hasL ? -(r + 8) : 0;
+        const oy = hasL ? -(r + 5) : 0;
+        this._drawOutOfPlaneGlyph(px + ox, py + oy, Math.sign(tau), STYLE.forceColor, r, 'τ', {
+          stickyKey: `${b.id}:tau`,
+          _labelKeysSeen: labelKeysSeen,
+        });
       }
     }
 
     // ── Spring restoring force F_sp = −k Δx (red) on each free end ──
-    this._drawSpringRestoringVectors();
+    this._drawSpringRestoringVectors(labelKeysSeen);
+    this._pruneVectorLabelSides(labelKeysSeen);
   }
 
   /**
    * Out-of-plane vector glyph at (cx, cy).
    * sign > 0 → out of screen (⊙), sign < 0 → into screen (⊗).
+   * Painted on {@link _angularVectorLayer} (above bodies).
    * @param {number} cx
    * @param {number} cy
    * @param {number} sign
    * @param {string} color
    * @param {number} r
    * @param {string} [label]
+   * @param {{ stickyKey?: string, _labelKeysSeen?: Set<string> }} [opts]
    */
-  _drawOutOfPlaneGlyph(cx, cy, sign, color, r, label) {
+  _drawOutOfPlaneGlyph(cx, cy, sign, color, r, label, opts = {}) {
     const strokeW = Math.max(1, Math.min(1.25, r * 0.18));
+    const layer = this._angularVectorLayer ?? this._vectorLayer;
     const g = el('g', { class: 'vector-oop', 'pointer-events': 'none' });
     g.appendChild(el('circle', {
       cx, cy, r,
@@ -959,13 +990,17 @@ export class SvgRenderer {
         stroke: color, 'stroke-width': strokeW, 'stroke-linecap': 'round',
       }));
     }
-    this._vectorLayer.appendChild(g);
+    layer.appendChild(g);
     if (label) {
       const below = { x: cx, y: cy + r + 6 };
       const above = { x: cx, y: cy - r - 6 };
       const box = (p) => this._vectorLabelBox(p.x, p.y, label);
-      const pick = this._scoreVectorLabelBox(box(below)) <= this._scoreVectorLabelBox(box(above))
-        ? below : above;
+      const scoreBelow = this._scoreVectorLabelBox(box(below));
+      const scoreAbove = this._scoreVectorLabelBox(box(above));
+      const side = this._pickStickyLabelSide(
+        opts.stickyKey, scoreBelow, scoreAbove, true, opts._labelKeysSeen,
+      );
+      const pick = side === 'a' ? below : above;
       const txt = el('text', {
         x: pick.x, y: pick.y,
         fill: color,
@@ -976,7 +1011,7 @@ export class SvgRenderer {
         'dominant-baseline': pick === below ? 'hanging' : 'auto',
       });
       setSvgMathLabel(txt, label);
-      this._vectorLayer.appendChild(txt);
+      layer.appendChild(txt);
       this._vectorObstacles.push({ kind: 'aabb', ...box(pick) });
     }
   }
@@ -984,8 +1019,9 @@ export class SvgRenderer {
   /**
    * Diagrammatic Hookean restoring force for each spring.
    * F_sp = −k·Δx along the spring axis (damping omitted: restoring force only).
+   * @param {Set<string>} [labelKeysSeen]
    */
-  _drawSpringRestoringVectors() {
+  _drawSpringRestoringVectors(labelKeysSeen) {
     for (const c of this.engine.constraints) {
       if (c._newtonType !== 'spring') continue;
 
@@ -1015,7 +1051,8 @@ export class SvgRenderer {
         this._drawVector(
           ox, oy,
           ox + arrowPx * nx, oy + arrowPx * ny,
-          STYLE.forceColor, 'url(#arrow-force)', 'F_sp',
+          STYLE.forceColor, 'F_sp',
+          { stickyKey: `${c.bodyA.id}:F_sp`, _labelKeysSeen: labelKeysSeen },
         );
       }
       if (c.bodyB && !c.bodyB.isStatic) {
@@ -1024,7 +1061,8 @@ export class SvgRenderer {
         this._drawVector(
           ox, oy,
           ox - arrowPx * nx, oy - arrowPx * ny,
-          STYLE.forceColor, 'url(#arrow-force)', 'F_sp',
+          STYLE.forceColor, 'F_sp',
+          { stickyKey: `${c.bodyB.id}:F_sp`, _labelKeysSeen: labelKeysSeen },
         );
       }
     }
@@ -1033,135 +1071,89 @@ export class SvgRenderer {
   /**
    * Friction vector in display space (pixels), same force scale as W / F_sp.
    *
-   * Always drawn in the contact plane. Uses the same static test as the solver:
-   * if the force needed to kill tangential slip (+ cancel mg∥) fits in μₛ N → F_st,
-   * otherwise fₖ = μₖ N opposing slip.
+   * Driven by the Coulomb solver’s last applied contact (`body._fricVis`) so
+   * we never invent arrows from noisy SAT overlaps the solver skipped
+   * (launch frames, glancing chatter, etc.).
    */
-  _frictionDisplayVector(body, allBodies) {
-    let sx = 0;
-    let sy = 0;
-    let isKinetic = false;
-    const { Collision } = Matter;
+  _frictionDisplayVector(body) {
+    const vis = body?._fricVis;
+    if (!vis) return null;
+
+    const { tx, ty, kinetic, cos, muK, muS, F_load_t, P } = vis;
+    if (!isFinite(tx) || !isFinite(ty)) return null;
 
     const forcePx = getForcePxPerN();
     const Wdisp = body.mass * getWeightPxPerKg();
-    const g = this.engine.gravity;
-    const gMag = Math.hypot(g.x ?? 0, g.y ?? 0);
-    const gx = gMag > 1e-12 ? (g.x ?? 0) / gMag : 0;
-    const gy = gMag > 1e-12 ? (g.y ?? 0) / gMag : 0;
+    const Ndisp = Math.max(0, Wdisp * Math.min(1, Math.max(0, cos)));
 
-    for (const other of allBodies) {
-      if (other === body) continue;
-      if (body.isStatic && other.isStatic) continue;
-
-      const col = Collision.collides(body, other);
-      if (!col || !(col.depth > 0.02) || !col.normal) continue;
-
-      const nLen = Math.hypot(col.normal.x, col.normal.y);
-      if (nLen < 0.01) continue;
-      let nx = col.normal.x / nLen;
-      let ny = col.normal.y / nLen;
-      if (nx * gx + ny * gy > 0) { nx = -nx; ny = -ny; }
-      const tx = -ny;
-      const ty = nx;
-
-      const cos = gMag > 1e-12 ? Math.abs(nx * gx + ny * gy) : 1;
-      const { fx: Fapp_x, fy: Fapp_y } = appliedForceMatterComponents(body);
-      const Fapp_n = Fapp_x * nx + Fapp_y * ny;
-      const Fapp_t = Fapp_x * tx + Fapp_y * ty;
-      // Display N from reduced load: (mg cosα − F·n̂), same ratio as W length.
-      const Ndisp = Math.max(0, Wdisp * Math.min(1, cos) - Fapp_n * (forcePx / (PX_PER_M / 1e6)));
-
-      const muK_a = body._muK  ?? body.friction;
-      const muK_b = other._muK ?? other.friction;
-      const muS_a = body._muS  ?? body.frictionStatic ?? muK_a * 1.3;
-      const muS_b = other._muS ?? other.frictionStatic ?? muK_b * 1.3;
-      const muK   = Math.sqrt(Math.max(0, muK_a * muK_b));
-      const muS   = Math.sqrt(Math.max(0, muS_a * muS_b));
-
-      // Contact-point slip (includes ω): same criterion as the solver for roll vs slip.
-      let px = body.position.x;
-      let py = body.position.y;
-      const sc = col.supportCount ?? 0;
-      if (col.supports && sc > 0) {
-        let sx0 = 0, sy0 = 0, n0 = 0;
-        for (let k = 0; k < sc; k++) {
-          const p = col.supports[k];
-          if (!p) continue;
-          sx0 += p.x; sy0 += p.y; n0++;
-        }
-        if (n0 > 0) { px = sx0 / n0; py = sy0 / n0; }
-      }
-      const wB = body.angularVelocity || 0;
-      const wO = other.angularVelocity || 0;
-      const vbx = body.velocity.x - wB * (py - body.position.y);
-      const vby = body.velocity.y + wB * (px - body.position.x);
-      const vox = other.isStatic ? 0 : other.velocity.x - wO * (py - other.position.y);
-      const voy = other.isStatic ? 0 : other.velocity.y + wO * (px - other.position.x);
-      const vSlipMat = (vbx - vox) * tx + (vby - voy) * ty;
-      if (!isFinite(vSlipMat)) continue;
-
-      // Same rest threshold as the solver: leftover μₛ budget after in-plane load.
-      const gScale = g.scale ?? 0;
-      const Fg_t = body.mass * gScale * ((g.x ?? 0) * tx + (g.y ?? 0) * ty);
-      const F_load_t = Fg_t + Fapp_t;
-      const N_m = Math.max(0,
-        body.mass * (gMag > 1e-12 ? gMag : 1) * gScale * Math.min(1, cos) - Fapp_n,
-      );
-      const restSlip = staticRestSlipMatter(muS * N_m, F_load_t, body.inverseMass || 0);
-      const useKinetic = Math.abs(vSlipMat) > Math.max(restSlip, 1e-12);
-
-      let fMag;
-      let dir;
-      if (useKinetic) {
-        isKinetic = true;
-        fMag = muK * Ndisp;
-        dir = -Math.sign(vSlipMat);
-      } else {
-        // Static / impending: |F_st| cancels in-plane load (mg∥ + F∥)
-        const loadDisp = Math.abs(F_load_t) * (forcePx / (PX_PER_M / 1e6));
-        fMag = Math.min(muS * Ndisp, loadDisp);
-        dir = Math.abs(F_load_t) < 1e-18 ? 0 : -Math.sign(F_load_t);
-      }
-
-      if (dir === 0 || fMag < 1e-9) continue;
-
-      sx += dir * tx * fMag;
-      sy += dir * ty * fMag;
+    let fMag;
+    let dir;
+    if (kinetic) {
+      fMag = muK * Ndisp;
+      dir = Math.abs(P) < 1e-18 ? 0 : Math.sign(P);
+    } else {
+      const loadDisp = Math.abs(F_load_t) * (forcePx / (PX_PER_M / 1e6));
+      fMag = Math.min(muS * Ndisp, loadDisp);
+      dir = Math.abs(P) > 1e-18
+        ? Math.sign(P)
+        : (Math.abs(F_load_t) < 1e-18 ? 0 : -Math.sign(F_load_t));
     }
 
+    if (dir === 0 || !(fMag > 1e-9)) return null;
+
+    const sx = dir * tx * fMag;
+    const sy = dir * ty * fMag;
     const rawLen = Math.hypot(sx, sy);
     if (!isFinite(rawLen) || rawLen < STYLE.vectorMinLen * 0.2) return null;
 
-    return { x: sx, y: sy, label: isKinetic ? 'f_k' : 'F_st' };
+    return { x: sx, y: sy, label: kinetic ? 'f_k' : 'F_st' };
   }
 
-  _drawVector(x1, y1, x2, y2, color, markerUrl, label, opts = {}) {
+  /**
+   * Draw a planar force / velocity arrow (shaft + filled triangular head).
+   * Heads are polygons rather than SVG markers so they stay visible on short
+   * shafts and under the camera transform.
+   */
+  _drawVector(x1, y1, x2, y2, color, label, opts = {}) {
     const minLen = opts.minLen ?? STYLE.vectorMinLen;
     const showTip = opts.showTip !== false;
     const len = Math.hypot(x2 - x1, y2 - y1);
     if (len < minLen) return;
 
-    // Shaft: stop short of tip so marker isn't overdrawn
     const ux = (x2 - x1) / len;
     const uy = (y2 - y1) / len;
-    const tipInset = showTip ? 5 : 0;
-    const stopX = x2 - ux * tipInset;
-    const stopY = y2 - uy * tipInset;
+    // Scale head with length so short arrows keep a visible tip (never longer than the shaft).
+    const headLen = showTip ? Math.min(6, Math.max(2.5, len * 0.32)) : 0;
+    const tipLen = Math.min(headLen, len * 0.45);
+    const headHalf = tipLen * 0.45;
+    const stopX = x2 - ux * tipLen;
+    const stopY = y2 - uy * tipLen;
 
-    const lineAttrs = {
+    this._vectorLayer.appendChild(el('line', {
       x1, y1, x2: stopX, y2: stopY,
       stroke: color, 'stroke-width': 1,
       'stroke-linecap': 'round',
       class: 'vector-arrow',
-    };
-    if (showTip && markerUrl) lineAttrs['marker-end'] = markerUrl;
-    this._vectorLayer.appendChild(el('line', lineAttrs));
+    }));
     this._vectorObstacles.push({ kind: 'seg', a: { x: x1, y: y1 }, b: { x: stopX, y: stopY } });
+
+    if (showTip && tipLen > 0) {
+      const nx = -uy;
+      const ny = ux;
+      const d = [
+        `M${stopX + nx * headHalf},${stopY + ny * headHalf}`,
+        `L${x2},${y2}`,
+        `L${stopX - nx * headHalf},${stopY - ny * headHalf}`,
+        'Z',
+      ].join(' ');
+      this._vectorLayer.appendChild(el('path', {
+        d, fill: color, class: 'vector-arrow',
+      }));
+    }
 
     if (!label) return;
 
-    // Label near the tip: pick the perpendicular side with fewer overlaps.
+    // Label near the tip: sticky perp side (hold + hysteresis) to avoid flicker.
     const off = 10;
     const a = { x: x2 + uy * off, y: y2 - ux * off };
     const b = { x: x2 - uy * off, y: y2 + ux * off };
@@ -1169,8 +1161,12 @@ export class SvgRenderer {
     const boxB = this._vectorLabelBox(b.x, b.y, label);
     const scoreA = this._scoreVectorLabelBox(boxA);
     const scoreB = this._scoreVectorLabelBox(boxB);
-    const pick = scoreA < scoreB || (scoreA === scoreB && a.y <= b.y) ? a : b;
-    const box = pick === a ? boxA : boxB;
+    const tiePreferA = a.y <= b.y;
+    const side = this._pickStickyLabelSide(
+      opts.stickyKey, scoreA, scoreB, tiePreferA, opts._labelKeysSeen,
+    );
+    const pick = side === 'a' ? a : b;
+    const box = side === 'a' ? boxA : boxB;
     const txt = el('text', {
       x: pick.x, y: pick.y,
       fill: color,
@@ -1183,6 +1179,52 @@ export class SvgRenderer {
     setSvgMathLabel(txt, label);
     this._vectorLayer.appendChild(txt);
     this._vectorObstacles.push({ kind: 'aabb', ...box });
+  }
+
+  /**
+   * Choose label side 'a' or 'b' with cooldown + hysteresis so overlap
+   * avoidance does not flip every frame while scores chatter.
+   * @param {string|undefined} key
+   * @param {number} scoreA  lower is better
+   * @param {number} scoreB
+   * @param {boolean} tiePreferA
+   * @param {Set<string>|undefined} seen
+   * @returns {'a'|'b'}
+   */
+  _pickStickyLabelSide(key, scoreA, scoreB, tiePreferA, seen) {
+    const ideal = scoreA < scoreB || (scoreA === scoreB && tiePreferA) ? 'a' : 'b';
+    if (!key) return ideal;
+    seen?.add(key);
+
+    const now = performance.now();
+    const prev = this._vectorLabelSide.get(key);
+    if (!prev) {
+      this._vectorLabelSide.set(key, { side: ideal, until: now + STYLE.vectorLabelHoldMs });
+      return ideal;
+    }
+
+    if (now < prev.until) return prev.side;
+
+    const curScore = prev.side === 'a' ? scoreA : scoreB;
+    const altScore = prev.side === 'a' ? scoreB : scoreA;
+    if (altScore < curScore - STYLE.vectorLabelHysteresis) {
+      this._vectorLabelSide.set(key, {
+        side: prev.side === 'a' ? 'b' : 'a',
+        until: now + STYLE.vectorLabelHoldMs,
+      });
+      return prev.side === 'a' ? 'b' : 'a';
+    }
+
+    // Refresh hold while keeping the current side.
+    prev.until = now + STYLE.vectorLabelHoldMs;
+    return prev.side;
+  }
+
+  /** Drop sticky entries for labels that were not drawn this frame. */
+  _pruneVectorLabelSides(seen) {
+    for (const key of this._vectorLabelSide.keys()) {
+      if (!seen.has(key)) this._vectorLabelSide.delete(key);
+    }
   }
 
   /**

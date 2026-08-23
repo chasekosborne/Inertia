@@ -13,6 +13,13 @@ import {
 export const GRID_CELL_PX = 10;
 
 /**
+ * Body width/height snap: 0.2 m = 2 minor cells.
+ * AABB centres snap to the 0.1 m grid; half-extents must land on that grid too,
+ * so sizes snap to even multiples of {@link GRID_CELL_PX}.
+ */
+export const GRID_SIZE_SNAP_PX = GRID_CELL_PX * 2;
+
+/**
  * Tip within this many world px of the body centre clears v₀ / F
  * (drag-to-origin). Larger than a hair so grid snap cannot leave a
  * residual when the body is off the snap lattice.
@@ -22,6 +29,16 @@ export const VECTOR_ZERO_TIP_PX = 10;
 export function snapWorldCoord(v, enabled) {
   if (!enabled) return Math.round(v);
   return Math.round(v / GRID_CELL_PX) * GRID_CELL_PX;
+}
+
+/**
+ * Snap a body width/height (world px) so edges stay on the minor grid when the
+ * AABB centre is grid-snapped (see {@link GRID_SIZE_SNAP_PX}).
+ */
+export function snapBodySizePx(sizePx, enabled) {
+  if (!enabled) return sizePx;
+  const stepped = Math.round(sizePx / GRID_SIZE_SNAP_PX) * GRID_SIZE_SNAP_PX;
+  return Math.max(GRID_SIZE_SNAP_PX, stepped);
 }
 
 /*

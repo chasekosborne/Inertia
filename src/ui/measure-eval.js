@@ -45,6 +45,8 @@ export function poseFromMatterBody(body) {
     baseWidth: body._baseWidth ?? null,
     height: body._height ?? null,
     width: body._width ?? null,
+    flipX: body._wedgeFlipX === true,
+    flipY: body._wedgeFlipY === true,
     appliedForce: af ? { F: af.F, thetaDeg: af.thetaDeg } : null,
   };
 }
@@ -74,6 +76,8 @@ export function poseFromFrameBody(frameBody, sceneBody = null) {
       ?? sceneBody?.geometry?.height
       ?? null,
     width: frameBody.bWidth ?? sceneBody?.geometry?.width ?? null,
+    flipX: frameBody.flipX === true || sceneBody?.geometry?.flipX === true,
+    flipY: frameBody.flipY === true || sceneBody?.geometry?.flipY === true,
     appliedForce: af && af.F > 0 ? af : null,
   };
 }
@@ -123,7 +127,9 @@ export function wedgeVertsFromPose(pose) {
   const W = pose.baseWidth ?? 40;
   const H = pose.height ?? 40;
   if (!(W > 0) || !(H > 0)) return null;
-  const o = wedgeComOffsetFromAABB(W, H);
+  const flipX = pose.flipX === true;
+  const flipY = pose.flipY === true;
+  const o = wedgeComOffsetFromAABB(W, H, flipX, flipY);
   const ang = pose.angle ?? 0;
   const c = Math.cos(ang);
   const s = Math.sin(ang);
@@ -131,16 +137,33 @@ export function wedgeVertsFromPose(pose) {
     x: pose.x - (c * o.x - s * o.y),
     y: pose.y - (s * o.x + c * o.y),
   };
-  const hw = W / 2;
-  const hh = H / 2;
   const toWorld = (lx, ly) => ({
     x: aabb.x + c * lx - s * ly,
     y: aabb.y + s * lx + c * ly,
   });
+  const [ra, foot, apex] = (() => {
+    // Inline to avoid circular concerns — match wedgeRawVerts
+    const hw = W / 2;
+    const hh = H / 2;
+    let r = { x: -hw, y: hh };
+    let f = { x: hw, y: hh };
+    let a = { x: -hw, y: -hh };
+    if (flipX) {
+      r = { x: hw, y: r.y };
+      f = { x: -hw, y: f.y };
+      a = { x: hw, y: a.y };
+    }
+    if (flipY) {
+      r = { x: r.x, y: -r.y };
+      f = { x: f.x, y: -f.y };
+      a = { x: a.x, y: -a.y };
+    }
+    return [r, f, a];
+  })();
   return {
-    bl: toWorld(-hw, hh),
-    br: toWorld(hw, hh),
-    tl: toWorld(-hw, -hh),
+    bl: toWorld(ra.x, ra.y),
+    br: toWorld(foot.x, foot.y),
+    tl: toWorld(apex.x, apex.y),
   };
 }
 
@@ -248,7 +271,7 @@ export function resolveAnchor(anchor, poses, ctx = {}) {
     if (pose.type === 'wedge') {
       const W = pose.baseWidth ?? 40;
       const H = pose.height ?? 40;
-      const o = wedgeComOffsetFromAABB(W, H);
+      const o = wedgeComOffsetFromAABB(W, H, pose.flipX === true, pose.flipY === true);
       const ang = pose.angle ?? 0;
       const c = Math.cos(ang);
       const s = Math.sin(ang);

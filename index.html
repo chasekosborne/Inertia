@@ -27,8 +27,11 @@
               <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
             </button>
-            <button id="btn-scene-reset" type="button" class="icon-only" disabled title="Reset to last loaded scene" aria-label="Reset scene">
+            <button id="btn-scene-reset" type="button" class="icon-only" disabled title="Reset to last saved setup" aria-label="Reset scene">
               <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+            </button>
+            <button id="btn-scene-clear" type="button" class="icon-only danger" title="Clear entire scene" aria-label="Clear entire scene">
+              <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             </button>
           </div>
 
@@ -53,7 +56,6 @@
               <div class="menu-divider" role="separator"></div>
               <button type="button" id="btn-scene-load" class="menu-item" role="menuitem">Load from file…</button>
               <button type="button" id="btn-scene-save" class="menu-item" role="menuitem">Export JSON…</button>
-              <button type="button" id="btn-export-svg" class="menu-item" role="menuitem" title="Export animated SVG" disabled>Export SVG…</button>
               <button type="button" id="btn-export-mp4" class="menu-item" role="menuitem" title="Export recorded frames as MP4 or WebM video" disabled>Export Video…</button>
             </div>
           </div>
@@ -107,6 +109,8 @@
           </div>
         </div>
       </header>
+
+      <div id="toolbar-toast" class="hidden" role="status" aria-live="polite"></div>
 
       <!-- Main layout -->
       <div id="main-layout">
@@ -185,9 +189,9 @@
               <circle cx="12" cy="12" r="5"/>
             </svg>
           </button>
-          <button class="obj-btn" data-tool="point-mass" data-drag-place="true" title="Circle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="8"/>
+          <button class="obj-btn" data-tool="point-mass" data-drag-place="true" title="Point">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <circle cx="12" cy="12" r="3.5"/>
             </svg>
           </button>
           <button class="obj-btn" data-tool="box" data-drag-place="true" title="Box">
@@ -450,7 +454,7 @@
               <div id="video-export-graph-panel" class="export-section-panel hidden">
                 <p class="export-hint">Export each checked graph as its own video. Configure aspect ratio, resolution, frame rate, and animation style per graph.</p>
                 <div id="video-export-graph-list" class="graph-export-list"></div>
-                <p id="video-export-graph-empty" class="export-hint hidden">No exportable graphs — open a time or phase graph with recorded data.</p>
+                <p id="video-export-graph-empty" class="export-hint hidden">No exportable graphs — open a time, phase, or parametric graph with recorded data.</p>
               </div>
             </div>
           </div>

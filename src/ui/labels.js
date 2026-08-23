@@ -171,6 +171,18 @@ export class LabelManager {
     return this.items.find(l => l.id === id) ?? null;
   }
 
+  /**
+   * Show or hide label text / leader (anchor still usable for measurements).
+   * @param {string} id
+   * @param {boolean} visible
+   */
+  setVisible(id, visible) {
+    const item = this.getById(id);
+    if (!item) return;
+    item.visible = !!visible;
+    this.sync();
+  }
+
   cancelDraft() {
     if (!this._draft) return false;
     this._draft = null;
@@ -397,13 +409,15 @@ export class LabelManager {
     for (const raw of list) {
       if (!raw || typeof raw !== 'object') continue;
       const text = typeof raw.text === 'string' ? raw.text.trim() : '';
-      if (!text) continue;
+      // Invisible anchors may omit text; they still resolve for measurements.
+      if (!text && raw.visible !== false) continue;
 
       /** @type {object} */
       const item = {
         id: typeof raw.id === 'string' ? raw.id : `lbl${_nextId++}`,
-        text,
+        text: text || '·',
         italic: raw.italic === true,
+        visible: raw.visible !== false,
         fontSize: Number.isFinite(raw.fontSize) ? raw.fontSize : 13,
       };
 
@@ -446,6 +460,7 @@ export class LabelManager {
       /** @type {Record<string, unknown>} */
       const entry = { id: l.id, text: l.text };
       if (l.italic) entry.italic = true;
+      if (l.visible === false) entry.visible = false;
       if (l.fontSize != null && l.fontSize !== 13) entry.fontSize = l.fontSize;
 
       if (l.placement === 'callout' && l.pointM) {
@@ -712,20 +727,34 @@ export class LabelManager {
       const textPos = this._resolveTextPos(item);
       if (!textPos) continue;
       const selected = this._selectedId === item.id;
+      const showChrome = item.visible !== false;
 
       const g = el('g', {
-        class: `scene-label scene-label-${item.placement}${selected ? ' selected' : ''}`,
+        class: `scene-label scene-label-${item.placement}${selected ? ' selected' : ''}${showChrome ? '' : ' scene-label-hidden'}`,
       });
 
       if (item.placement === 'callout' || item.placement === 'standalone') {
         const target = this._resolveTarget(item);
-        // Keep leaders with the label (above bodies). The shared leaderLayer paints
-        // under ground, which hid pointers like x₀ below the floor.
-        this._appendPointLeader(g, g, textPos, target, ink, selected);
+        if (showChrome) {
+          // Keep leaders with the label (above bodies). The shared leaderLayer paints
+          // under ground, which hid pointers like x₀ below the floor.
+          this._appendPointLeader(g, g, textPos, target, ink, selected);
+        } else if (selected && target) {
+          // Invisible anchors still show a handle when selected for editing.
+          g.appendChild(el('circle', {
+            cx: target.x,
+            cy: target.y,
+            r: 2.2,
+            fill: '#fff',
+            stroke: ink,
+            'stroke-width': 1,
+            'vector-effect': 'non-scaling-stroke',
+          }));
+        }
       }
 
-      this._appendLabelText(g, textPos, item, false);
-      this.layer.appendChild(g);
+      if (showChrome) this._appendLabelText(g, textPos, item, false);
+      if (showChrome || selected) this.layer.appendChild(g);
     }
 
     if (this._draft) {

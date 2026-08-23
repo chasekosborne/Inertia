@@ -71,6 +71,8 @@ export function createBodyFromSnap(snap) {
         baseWidth: snap.baseWidth ?? snap.bWidth,
         height: snap.bHeight,
         footAngle: snap.footAngle,
+        flipX: snap.flipX === true,
+        flipY: snap.flipY === true,
       });
       break;
     case 'compound':

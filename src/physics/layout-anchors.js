@@ -28,7 +28,7 @@ export function isConstraintLengthStretchBody(body) {
  * @param {number} wy  Cursor world y (px)
  * @param {object} [opts]
  * @param {number} [opts.minLen=5]
- * @param {boolean} [opts.snapGrid=false]  Snap length to the world grid (0.1 m)
+ * @param {boolean} [opts.snapGrid=false]  Snap the moving tip onto the world grid
  * @param {{ x: number, y: number }} [opts.axis]  Unit direction frozen at drag start
  * @returns {{ length: number, attach: {x:number,y:number}, pivot: {x:number,y:number}, axis: {x:number,y:number} } | null}
  */
@@ -67,7 +67,15 @@ export function stretchConstraintEndAlongAxis(c, which, wx, wy, opts = {}) {
   }
 
   let t = (wx - pivot.x) * ux + (wy - pivot.y) * uy;
-  if (snapGrid) t = snapWorldCoord(t, true);
+  if (snapGrid) {
+    // Snap the tip onto the world grid, then keep it on the frozen axis
+    // (same idea as velocity / ground handles).
+    let tipX = pivot.x + ux * t;
+    let tipY = pivot.y + uy * t;
+    tipX = snapWorldCoord(tipX, true);
+    tipY = snapWorldCoord(tipY, true);
+    t = (tipX - pivot.x) * ux + (tipY - pivot.y) * uy;
+  }
   if (t < minLen) t = minLen;
 
   const attach = { x: pivot.x + ux * t, y: pivot.y + uy * t };
@@ -177,14 +185,29 @@ export function applyHangingChainTranslation(chain, rootBody) {
 }
 
 /**
- * If `draggedBody` is linked by string/rod/spring to a fixed pivot (world anchor or
- * static body), returns pivot, radius (= link length / spring rest length), and local
- * attach so setup drag can move the bob on a circular arc. Change length via the
- * blue end-handle instead.
+ * If `draggedBody` is linked by string/rod/spring, returns pivot, radius, and
+ * local attach so setup drag can move the bob on a circular arc.
+ *
+ * Prefers a fixed pivot (world / static anchor) when present — e.g. the upper
+ * bob of a double pendulum. Otherwise pivots about the other dynamic body on
+ * the link (lower bob arcs about the upper). Change length via the blue
+ * end-handle instead.
+ *
+ * @returns {{
+ *   pivot: { x: number, y: number },
+ *   radius: number,
+ *   localAttach: { x: number, y: number },
+ *   kind: string,
+ *   constraintId: number,
+ *   pivotBody: import('matter-js').Body|null,
+ * } | null}
  */
 export function findPendulumGuidance(engine, draggedBody) {
   if (!draggedBody || draggedBody.isStatic || draggedBody._newtonType === 'anchor' ||
       draggedBody._newtonType === 'metric-basis') return null;
+
+  let fixedHit = null;
+  let dynamicHit = null;
 
   for (const c of engine.constraints) {
     if (c._ropeLink) continue;
@@ -192,24 +215,40 @@ export function findPendulumGuidance(engine, draggedBody) {
     const L = typeof c.length === 'number' ? c.length : 0;
     if (L < 1e-3) continue;
 
-    if (c.bodyB === draggedBody && _endActsAsFixedPivot(c.bodyA)) {
-      return {
-        pivot: constraintAnchorWorld(c, 'A'),
-        radius: L,
-        localAttach: c.pointB ? { ...c.pointB } : { x: 0, y: 0 },
-        kind: c._newtonType,
-      };
+    /** @type {'A'|'B'|null} */
+    let draggedEnd = null;
+    /** @type {'A'|'B'|null} */
+    let otherEnd = null;
+    if (c.bodyB === draggedBody) {
+      draggedEnd = 'B';
+      otherEnd = 'A';
+    } else if (c.bodyA === draggedBody) {
+      draggedEnd = 'A';
+      otherEnd = 'B';
     }
-    if (c.bodyA === draggedBody && _endActsAsFixedPivot(c.bodyB)) {
-      return {
-        pivot: constraintAnchorWorld(c, 'B'),
-        radius: L,
-        localAttach: c.pointA ? { ...c.pointA } : { x: 0, y: 0 },
-        kind: c._newtonType,
-      };
+    if (!draggedEnd || !otherEnd) continue;
+
+    const otherBody = otherEnd === 'A' ? c.bodyA : c.bodyB;
+    const localAttach = draggedEnd === 'A'
+      ? (c.pointA ? { ...c.pointA } : { x: 0, y: 0 })
+      : (c.pointB ? { ...c.pointB } : { x: 0, y: 0 });
+    const hit = {
+      pivot: constraintAnchorWorld(c, otherEnd),
+      radius: L,
+      localAttach,
+      kind: c._newtonType,
+      constraintId: c.id,
+      pivotBody: otherBody ?? null,
+    };
+
+    if (_endActsAsFixedPivot(otherBody)) {
+      if (!fixedHit) fixedHit = hit;
+    } else if (otherBody && otherBody._newtonType !== 'metric-basis' && !dynamicHit) {
+      dynamicHit = hit;
     }
   }
-  return null;
+
+  return fixedHit ?? dynamicHit;
 }
 
 /**
@@ -279,18 +318,25 @@ export function worldToBodyLocal(body, wx, wy) {
 /**
  * Preferred attach point on a body near (wx, wy).
  * Point masses / anchors / boxes → centre. Ground → closest point on top edge.
+ * @param {object} [opts]
+ * @param {boolean} [opts.snapGrid=false]  Snap along the ground top edge to the grid
  */
-export function attachPointOnBody(body, wx, wy) {
+export function attachPointOnBody(body, wx, wy, opts = {}) {
   if (!body) return null;
   if (body._newtonType === 'ground') {
     const { L, R } = groundTopEdgeWorld(body);
     const dx = R.x - L.x;
     const dy = R.y - L.y;
-    const len2 = dx * dx + dy * dy;
+    const edgeLen = Math.hypot(dx, dy);
     let t = 0.5;
-    if (len2 > 1e-8) {
-      t = ((wx - L.x) * dx + (wy - L.y) * dy) / len2;
+    if (edgeLen > 1e-8) {
+      t = ((wx - L.x) * dx + (wy - L.y) * dy) / (edgeLen * edgeLen);
       t = Math.max(0, Math.min(1, t));
+      if (opts.snapGrid) {
+        let dist = t * edgeLen;
+        dist = snapWorldCoord(dist, true);
+        t = Math.max(0, Math.min(1, dist / edgeLen));
+      }
     }
     const world = { x: L.x + t * dx, y: L.y + t * dy };
     return { body, local: worldToBodyLocal(body, world.x, world.y), world };
@@ -314,12 +360,14 @@ export function attachPointOnBody(body, wx, wy) {
  * @param {number} [opts.excludeConstraintId]  Constraint being edited
  * @param {number|null} [opts.excludeBodyId]   Other end's body (cannot attach both ends to same body)
  * @param {number} [opts.hitPx=28]
+ * @param {boolean} [opts.snapGrid=false]  Snap ground-edge attachments to the grid
  * @returns {{ body: object, local: {x:number,y:number}, world: {x:number,y:number}, kind: string } | null}
  */
 export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
   const hitPx = opts.hitPx ?? 28;
   const excludeC = opts.excludeConstraintId;
   const excludeBodyId = opts.excludeBodyId ?? null;
+  const snapGrid = !!opts.snapGrid;
   let best = null;
   let bestD = hitPx;
 
@@ -351,7 +399,7 @@ export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
     let d;
 
     if (body._newtonType === 'ground') {
-      const ap = attachPointOnBody(body, wx, wy);
+      const ap = attachPointOnBody(body, wx, wy, { snapGrid });
       world = ap.world;
       local = ap.local;
       d = Math.hypot(wx - world.x, wy - world.y);
@@ -372,7 +420,7 @@ export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
       const lx = cos * (wx - body.position.x) - sin * (wy - body.position.y);
       const ly = sin * (wx - body.position.x) + cos * (wy - body.position.y);
       if (Math.abs(lx) > hw + hitPx || Math.abs(ly) > hh + hitPx) continue;
-      const ap = attachPointOnBody(body, wx, wy);
+      const ap = attachPointOnBody(body, wx, wy, { snapGrid });
       world = ap.world;
       local = ap.local;
       d = Math.hypot(wx - world.x, wy - world.y);

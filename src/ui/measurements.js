@@ -38,6 +38,7 @@ import {
 } from '../physics/bodies.js';
 import { constraintAnchorWorld } from '../physics/layout-anchors.js';
 import { COLORS, FONT_DIAGRAM } from '../theme.js';
+import { setSvgMathLabel } from '../math-text.js';
 import {
   lengthPartsM,
   lengthValueFromParts,
@@ -1962,7 +1963,7 @@ export class MeasurementManager {
       'dominant-baseline': 'middle',
       'pointer-events': 'none',
     });
-    t.textContent = text;
+    setSvgMathLabel(t, text);
     parent.appendChild(t);
   }
 

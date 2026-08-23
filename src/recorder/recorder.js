@@ -65,6 +65,8 @@ export class Recorder {
       hollow:   b._hollow === true,
       baseWidth: b._baseWidth ?? null,
       footAngle: b._footAngle ?? null,
+      flipX: b._wedgeFlipX === true,
+      flipY: b._wedgeFlipY === true,
       bWidth:   b._width ?? b._baseWidth ?? null,
       bHeight:  b._height ?? null,
       isStatic: !!b.isStatic,

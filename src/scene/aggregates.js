@@ -166,7 +166,7 @@ export function bodyDisplayName(body) {
   if (typeof body.label === 'string' && body.label) return body.label;
   const t = body._newtonType ?? 'body';
   if (t === 'compound') return 'Group';
-  if (t === 'point-mass') return 'Circle';
+  if (t === 'point-mass') return 'Point';
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -178,7 +178,7 @@ export function weldPartDisplayName(body, partIndex) {
   const meta = body?._weldParts?.[partIndex];
   if (meta?.label) return meta.label;
   const type = meta?.type ?? 'part';
-  const nice = type === 'point-mass' ? 'Circle' : (type.charAt(0).toUpperCase() + type.slice(1));
+  const nice = type === 'point-mass' ? 'Point' : (type.charAt(0).toUpperCase() + type.slice(1));
   return `${nice} ${partIndex + 1}`;
 }
 

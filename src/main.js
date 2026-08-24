@@ -18,9 +18,6 @@ import {
   deserializeScene,
   cloneSceneDocument,
   validateSceneDocument,
-  captureSelectionClipboard,
-  pasteClipboard,
-  PASTE_OFFSET_M,
 } from './scene/index.js';
 import { removeRope, ropeSelection } from './physics/rope.js';
 import { Camera, DEFAULT_CAMERA_SCALE } from './camera/camera.js';
@@ -35,6 +32,7 @@ import { createEditorContext } from './ui/handles/editor-context.js';
 import { ScaleHandles } from './ui/handles/scale-handles.js';
 import { VectorHandle } from './ui/handles/vector-handle.js';
 import { EditHandles } from './ui/handles/edit-handles.js';
+import { ObjectClipboard } from './ui/object-clipboard.js';
 
 
 // ── DOM refs ──────────────────────────────────────────────────────
@@ -640,11 +638,11 @@ document.addEventListener('keydown', e => {
   }
   // Copy / paste selected objects (setup mode)
   if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-    if (_copySelection()) e.preventDefault();
+    if (objectClipboard.copy()) e.preventDefault();
     return;
   }
   if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-    if (_pasteSelection()) e.preventDefault();
+    if (objectClipboard.paste()) e.preventDefault();
     return;
   }
   // Save checkpoint for Reset (Ctrl/Cmd+S)
@@ -690,80 +688,6 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Undo / redo operations ────────────────────────────────────────
-
-/** @type {{ bodies: object[], constraints: object[], uiAggregates?: object[] }|null} */
-let _objectClipboard = null;
-/** Paste-stack offset multiplier (resets on new copy). */
-let _pasteGeneration = 0;
-
-function _copySelection() {
-  if (appMode !== 'setup') return false;
-  if (interaction.mode === 'camera') return false;
-  const frag = captureSelectionClipboard(engine, _currentSelection);
-  if (!frag) return false;
-  _objectClipboard = frag;
-  _pasteGeneration = 0;
-  return true;
-}
-
-function _pasteSelection() {
-  if (appMode !== 'setup') return false;
-  if (interaction.mode === 'camera') return false;
-  if (!_objectClipboard?.bodies?.length) return false;
-
-  _pasteGeneration += 1;
-  const n = _pasteGeneration;
-  _pushHistory();
-  const result = pasteClipboard(engine, _objectClipboard, {
-    dxM: PASTE_OFFSET_M * n,
-    dyM: PASTE_OFFSET_M * n,
-  });
-  if (!result) return false;
-
-  const bodies = Object.values(result.bodyMap);
-  objectBrowser?.scheduleRefresh();
-
-  const ropeBodies = bodies.filter(b => b._ropeSegment && b._ropeId);
-  if (ropeBodies.length && ropeBodies.every(b => b._ropeId === ropeBodies[0]._ropeId)) {
-    const sel = ropeSelection(engine, ropeBodies[0]._ropeId);
-    if (sel) {
-      _onSandboxSelect(sel);
-      return true;
-    }
-  }
-
-  const pastedIds = new Set(bodies.map(b => b.id));
-  const aggs = (engine._uiAggregates ?? []).filter(a =>
-    Array.isArray(a.memberIds)
-    && a.memberIds.length >= 2
-    && a.memberIds.every(id => pastedIds.has(id)),
-  );
-  if (aggs.length) {
-    const a = aggs[aggs.length - 1];
-    _onSandboxSelect({
-      type: 'aggregate',
-      aggId: a.id,
-      id: a.id,
-      key: `agg:${a.id}`,
-      memberIds: [...a.memberIds],
-    });
-    return true;
-  }
-
-  if (bodies.length === 1) {
-    _onSandboxSelect({ type: 'body', id: bodies[0].id });
-    return true;
-  }
-  if (bodies.length > 1) {
-    _onSandboxSelect({
-      type: 'aggregate',
-      memberIds: bodies.map(b => b.id),
-      key: `paste:${bodies[0].id}`,
-    });
-    return true;
-  }
-  return true;
-}
 
 function _doUndo() {
   if (appMode !== 'setup') return;
@@ -1063,6 +987,9 @@ const vectorHandle = new VectorHandle(editorContext);
 
 /** Constraint / rope / ground grab dots for whatever is selected. */
 const editHandles = new EditHandles(editorContext);
+
+/** Ctrl+C / Ctrl+V for the current selection. */
+const objectClipboard = new ObjectClipboard(editorContext);
 
 window.addEventListener('resize', () => {
   cameraOverlay.syncSize();

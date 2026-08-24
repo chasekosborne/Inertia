@@ -41,6 +41,11 @@ import { springPathProps } from '../renderer/spring-path.js';
 import { snapWorldCoord, snapSegmentFromStart, snapAngleRad, SNAP_ANGLE_STEP_5_DEG } from '../grid.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { pxToM } from '../units.js';
+import { SEL_HANDLE_ATTR,
+  SCALE_HANDLE_ATTR,
+  VECTOR_HANDLE_ID,
+  UI_TOP_LAYER_ID,
+  ANY_HANDLE_SEL } from './handles/chrome.js';
 
 const { Body, Vertices, Bounds } = Matter;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -215,7 +220,7 @@ export class InteractionHandler {
       }
       if (this._mode === 'pan' || this._shiftPanning) return;
       // Interactive chrome lives above bodies: don't treat as empty canvas.
-      if (e.target?.closest?.('#vel-handle, #layer-ui-top, [data-sel-handle], [data-scale-handle]')) {
+      if (e.target?.closest?.(ANY_HANDLE_SEL)) {
         return;
       }
 
@@ -416,13 +421,13 @@ export class InteractionHandler {
     // Camera tool is an isolated mode: sandbox objects are not selectable or editable.
     if (this._mode === 'camera') return;
 
-    if (e.target?.closest?.('[data-sel-handle]')) return;
+    if (e.target?.closest?.(`[${SEL_HANDLE_ATTR}]`)) return;
 
     // Scale handles: main.js owns resize drags.
-    if (e.target?.closest?.('[data-scale-handle]')) return;
+    if (e.target?.closest?.(`[${SCALE_HANDLE_ATTR}]`)) return;
 
     // v₀ SVG handle: let it capture drags without starting select-move on the body.
-    if (e.target?.closest?.('#vel-handle')) return;
+    if (e.target?.closest?.(`#${VECTOR_HANDLE_ID}`)) return;
 
     // Pan tool, or temporary Shift+drag pan from any other tool.
     if (this._camera && (this._mode === 'pan' || e.shiftKey)) {
@@ -670,7 +675,7 @@ export class InteractionHandler {
   // ─── Pointer move ──────────────────────────────────────────────
 
   _onMove(e) {
-    if (e.target?.closest?.('#vel-handle')) return;
+    if (e.target?.closest?.(`#${VECTOR_HANDLE_ID}`)) return;
 
     if (this._camera?.isPanning) {
       const sp = this._svgScreenPoint(e);
@@ -1019,7 +1024,7 @@ export class InteractionHandler {
       return;
     }
 
-    if (e.target?.closest?.('#vel-handle')) return;
+    if (e.target?.closest?.(`#${VECTOR_HANDLE_ID}`)) return;
 
     const pt = this._svgPoint(e);
     this._clearGhost();

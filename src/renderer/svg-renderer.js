@@ -29,6 +29,20 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);
 const DEFAULT_BALL_R = mToPx(DEFAULT_BALL_RADIUS_M);
 
+/**
+ * Shortest arrow the renderer will actually draw (world px). Below this
+ * `_drawVector` bails, so nothing is painted.
+ *
+ * Exported because the v₀ / F handle defers its own shaft to the rendered
+ * arrow and must agree on when that arrow exists.
+ */
+export const VECTOR_MIN_LEN = {
+  /** Weight, applied force, friction, spring. */
+  default: 6,
+  /** Velocity is allowed to render shorter so slow motion still reads. */
+  velocity: 2,
+};
+
 const STYLE = {
   ink:           COLORS.ink,
   inkLight:      COLORS.inkLight,
@@ -51,8 +65,8 @@ const STYLE = {
   /** Ignore contacts with negligible relative slip when classifying kinetic direction (m/s). */
   frictionSlipEpsMs:    1e-4,
   // Velocity (kinematic, not a force): same world scale as the v₀ handle
-  velColor:      '#2d70b3',
-  vectorMinLen:  6,
+  velColor:      '#2980b9',
+  vectorMinLen:  VECTOR_MIN_LEN.default,
   /** Min time a force/velocity label keeps its side before re-picking. */
   vectorLabelHoldMs: 550,
   /** Other side must beat current by at least this score to flip after hold. */
@@ -138,6 +152,7 @@ export class SvgRenderer {
     this._showGrid = v;
     this._gridLayer.style.display    = v ? '' : 'none';
   }
+  get showVectors() { return this._showVectors; }
   setShowVectors(v) {
     this._showVectors = v;
     const disp = v ? '' : 'none';
@@ -912,7 +927,7 @@ export class SvgRenderer {
         const vex = px + vxMs * vPx;
         const vey = py - vyMs * vPx;
         this._drawVector(px, py, vex, vey, STYLE.velColor, 'v', {
-          minLen: 2,
+          minLen: VECTOR_MIN_LEN.velocity,
           stickyKey: `${b.id}:v`,
           _labelKeysSeen: labelKeysSeen,
         });

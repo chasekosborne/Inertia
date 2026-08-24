@@ -1,5 +1,11 @@
 /**
  * Screen-space overlay for the camera tool: red dotted frame + origin handle.
+ *
+ * Owns its own pointer input, which is a second, parallel input path to
+ * `InteractionHandler`: while the camera tool is active the sandbox is not
+ * selectable, and this overlay interprets the same gestures differently —
+ * dragging a frame handle resizes the export bounds, dragging anywhere else
+ * (or Shift / middle-button anywhere) pans the view.
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -7,6 +13,10 @@ const FRAME_STROKE = '#a63d2f';
 const HANDLE = 8;
 const ORIGIN_R = 6;
 const MIN_SCREEN = 24;
+/** Smallest viewport worth resizing the overlay to (px). */
+const MIN_OVERLAY_PX = 2;
+/** Middle mouse button. */
+const BUTTON_MIDDLE = 1;
 
 function el(tag, attrs = {}) {
   const e = document.createElementNS(SVG_NS, tag);
@@ -19,11 +29,16 @@ export class CameraOverlay {
    * @param {SVGSVGElement} overlaySvg screen-space overlay (matches canvas size)
    * @param {import('../camera/camera.js').Camera} camera
    * @param {import('../camera/camera-rig.js').CameraRig} rig
+   * @param {object} [deps]
+   * @param {() => string} [deps.getToolMode]  Input is inert unless this is 'camera'.
+   * @param {() => { width: number, height: number }} [deps.getViewSize]
+   * @param {() => void} [deps.onFrameChanged] Fired after a frame drag ends.
    */
-  constructor(overlaySvg, camera, rig) {
+  constructor(overlaySvg, camera, rig, deps = {}) {
     this.svg = overlaySvg;
     this.camera = camera;
     this.rig = rig;
+    this.deps = deps;
     this._g = el('g', { id: 'camera-frame-ui' });
     this.svg.appendChild(this._g);
     this._active = false;
@@ -32,6 +47,30 @@ export class CameraOverlay {
     this._dragMode = null;
     this._dragStart = null;
     this._rigStart = null;
+
+    /** View pan in progress (distinct from a frame-handle drag). */
+    this._viewPanning = false;
+
+    this._bindInput();
+  }
+
+  /** True when the camera tool owns input. */
+  _inCameraMode() {
+    return this.deps.getToolMode?.() === 'camera';
+  }
+
+  /** Match the overlay viewport to the canvas. */
+  syncSize() {
+    const size = this.deps.getViewSize?.();
+    if (!this.svg || !size || size.width < MIN_OVERLAY_PX) return;
+    this.svg.setAttribute('width', String(size.width));
+    this.svg.setAttribute('height', String(size.height));
+    this.svg.setAttribute('viewBox', `0 0 ${size.width} ${size.height}`);
+  }
+
+  /** Shift is held: hint that a drag would pan rather than edit the frame. */
+  setPanReady(on) {
+    this.svg?.classList.toggle('camera-pan-ready', !!on && this._inCameraMode());
   }
 
   setActive(on) {
@@ -39,7 +78,11 @@ export class CameraOverlay {
     this.svg.style.display = on ? 'block' : 'none';
     this.svg.style.pointerEvents = on ? 'auto' : 'none';
     this.svg.setAttribute('aria-hidden', on ? 'false' : 'true');
-    if (!on) this.endDrag();
+    if (!on) {
+      this.endDrag();
+      this._endViewPan();
+      this.svg.classList.remove('camera-pan-ready', 'camera-pan-active');
+    }
     this.sync();
   }
 
@@ -210,4 +253,92 @@ export class CameraOverlay {
 
   get isDragging() { return this._dragMode != null; }
   get isResizing() { return this._dragMode != null && this._dragMode !== 'move'; }
+
+  // ─── Input ───────────────────────────────────────────────────────
+
+  /** Overlay-local coordinates for a pointer event. */
+  _pointFrom(event) {
+    const rect = this.svg.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  _bindInput() {
+    if (!this.svg) return;
+    this.svg.addEventListener('pointerdown', event => this._onPointerDown(event));
+    this.svg.addEventListener('pointermove', event => this._onPointerMove(event));
+    this.svg.addEventListener('pointerup', () => this._onPointerRelease());
+    this.svg.addEventListener('pointercancel', () => this._onPointerRelease());
+    this.svg.addEventListener('wheel', event => this._onWheel(event), { passive: false });
+  }
+
+  _beginViewPan(point, pointerId) {
+    this._endViewPan();
+    this.camera.beginPan(point.x, point.y);
+    this._viewPanning = true;
+    this.svg.classList.add('camera-pan-active');
+    this.svg.setPointerCapture(pointerId);
+  }
+
+  _endViewPan() {
+    if (!this._viewPanning) return;
+    this._viewPanning = false;
+    this.camera.endPan();
+    this.svg?.classList.remove('camera-pan-active');
+  }
+
+  _onPointerDown(event) {
+    if (!this._inCameraMode()) return;
+    const point = this._pointFrom(event);
+
+    // Shift+drag or middle-button drag pans the view; frame handles edit the
+    // export bounds.
+    if (event.button === BUTTON_MIDDLE || (event.button === 0 && event.shiftKey)) {
+      this._beginViewPan(point, event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
+    if (event.button !== 0) return;
+
+    const mode = this.hitHandle(point.x, point.y);
+    if (mode) {
+      this._endViewPan();
+      this.beginDrag(mode, point.x, point.y);
+      this.svg.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
+    // Outside the frame: drag to pan the view.
+    this._beginViewPan(point, event.pointerId);
+    event.preventDefault();
+  }
+
+  _onPointerMove(event) {
+    const point = this._pointFrom(event);
+    if (this._viewPanning) {
+      this.camera.movePan(point.x, point.y);
+      this.sync();
+      return;
+    }
+    if (!this.isDragging) return;
+    this.moveDrag(point.x, point.y);
+  }
+
+  _onPointerRelease() {
+    const wasFrameDrag = this.isDragging;
+    this.endDrag();
+    this._endViewPan();
+    if (wasFrameDrag && this._inCameraMode()) {
+      this.deps.onFrameChanged?.();
+    }
+  }
+
+  _onWheel(event) {
+    if (!this._inCameraMode()) return;
+    event.preventDefault();
+    const point = this._pointFrom(event);
+    this.camera.onWheel(point.x, point.y, event.deltaY);
+    this.sync();
+  }
 }

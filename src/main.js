@@ -33,6 +33,7 @@ import { EditHandles } from './ui/handles/edit-handles.js';
 import { ObjectClipboard } from './ui/object-clipboard.js';
 import { TimelineBar } from './ui/timeline-bar.js';
 import { PalettePlacement } from './ui/palette-placement.js';
+import { bindShortcuts } from './ui/shortcuts.js';
 
 
 // ── DOM refs ──────────────────────────────────────────────────────
@@ -546,81 +547,73 @@ playback.onChange((frameIdx, event) => {
   _syncGraphs(true);
 });
 
-document.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-  if (e.target.isContentEditable) return;
-  if (e.code === 'Digit0' || e.code === 'Numpad0') {
-    e.preventDefault();
-    // Prefer graph home when the pointer is over a plot.
-    if (graphHost.resetHoveredView()) return;
-    const scale = sceneSession.baselineCameraScale ?? DEFAULT_CAMERA_SCALE;
-    _frameMetricBasis(scale);
-    if (interaction.mode === 'camera') cameraOverlay.sync();
-    return;
-  }
-  // Undo: Ctrl+Z
-  if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-    e.preventDefault();
-    _doUndo();
-    return;
-  }
-  // Redo: Ctrl+Y  or  Ctrl+Shift+Z
-  if ((e.code === 'KeyY' && (e.ctrlKey || e.metaKey)) ||
-      (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
-    e.preventDefault();
-    _doRedo();
-    return;
-  }
-  // Copy / paste selected objects (setup mode)
-  if (e.code === 'KeyC' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-    if (objectClipboard.copy()) e.preventDefault();
-    return;
-  }
-  if (e.code === 'KeyV' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-    if (objectClipboard.paste()) e.preventDefault();
-    return;
-  }
-  // Save checkpoint for Reset (Ctrl/Cmd+S)
-  if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
-    e.preventDefault();
-    sceneSession.saveCheckpoint();
-    return;
-  }
-  if (e.code === 'Space') {
-    e.preventDefault();
-    if (appMode === 'review') {
-      timeline.toggleReviewPlay();
-    } else {
-      _toggleCaptureSession();
-    }
-  }
-  if (e.code === 'ArrowRight' && appMode === 'review') {
-    e.preventDefault(); playback.stepForward(); timeline.refreshReviewIcon();
-  }
-  if (e.code === 'ArrowLeft' && appMode === 'review') {
-    e.preventDefault(); playback.stepBack(); timeline.refreshReviewIcon();
-  }
-  if (e.code === 'KeyI') {
-    e.preventDefault(); timeline.jumpToStart();
-  }
-  if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    if (appMode === 'review') timeline.toggleReviewPlay();
-    else _activateTool('rotate', 'Rotate');
-  }
-  if (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    _activateTool('select', 'Select / Move');
-  }
-  if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    _activateTool('scale', 'Scale');
-  }
-  if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    _activateTool('camera', 'Camera');
-  }
-});
+/**
+ * Global shortcuts, in priority order — earlier entries win a shared key.
+ *
+ * Modifier fields are tri-state: omitting one means "don't care", which is how
+ * a binding ends up swallowing things like Ctrl+Shift+I. Be explicit.
+ */
+bindShortcuts([
+  // ── View ──
+  {
+    code: ['Digit0', 'Numpad0'], ctrl: false,
+    run: () => {
+      // Prefer graph home when the pointer is over a plot.
+      if (graphHost.resetHoveredView()) return;
+      _frameMetricBasis(sceneSession.baselineCameraScale ?? DEFAULT_CAMERA_SCALE);
+      if (interaction.mode === 'camera') cameraOverlay.sync();
+    },
+  },
+
+  // ── History ──
+  { code: 'KeyZ', ctrl: true, shift: false, run: () => _doUndo() },
+  { code: 'KeyZ', ctrl: true, shift: true,  run: () => _doRedo() },
+  { code: 'KeyY', ctrl: true,               run: () => _doRedo() },
+
+  // ── Clipboard ── (only consume the key if something was actually copied)
+  { code: 'KeyC', ctrl: true, alt: false, shift: false, run: () => objectClipboard.copy() },
+  { code: 'KeyV', ctrl: true, alt: false, shift: false, run: () => objectClipboard.paste() },
+
+  // ── Scene ──
+  { code: 'KeyS', ctrl: true, alt: false, shift: false, run: () => sceneSession.saveCheckpoint() },
+
+  // ── Transport ──
+  {
+    code: 'Space', ctrl: false,
+    run: () => {
+      if (appMode === 'review') timeline.toggleReviewPlay();
+      else _toggleCaptureSession();
+    },
+  },
+  {
+    code: 'ArrowRight', when: () => appMode === 'review',
+    run: () => { playback.stepForward(); timeline.refreshReviewIcon(); },
+  },
+  {
+    code: 'ArrowLeft', when: () => appMode === 'review',
+    run: () => { playback.stepBack(); timeline.refreshReviewIcon(); },
+  },
+  { code: 'KeyI', ctrl: false, run: () => timeline.jumpToStart() },
+
+  // ── Tools ── (R doubles as reverse-play while reviewing)
+  {
+    code: 'KeyR', ctrl: false, alt: false,
+    run: () => {
+      if (appMode === 'review') timeline.toggleReviewPlay();
+      else _activateTool('rotate', 'Rotate');
+    },
+  },
+  { code: 'KeyS', ctrl: false, alt: false, run: () => _activateTool('select', 'Select / Move') },
+  { code: 'KeyC', ctrl: false, alt: false, run: () => _activateTool('scale', 'Scale') },
+  { code: 'KeyV', ctrl: false, alt: false, run: () => _activateTool('camera', 'Camera') },
+
+  // ── Selection ──
+  // Escape cancels an in-progress draft first; only if there is none does it
+  // fall through to closing the menus.
+  { code: 'Escape', run: () => measurements.cancelDraft() || labels.cancelDraft() },
+  { code: 'Escape', run: () => { _closeSettings(); _closePresetMenu(); } },
+  { code: 'Delete', run: () => _deleteSelection() },
+]);
 
 // ── Undo / redo operations ────────────────────────────────────────
 
@@ -858,60 +851,41 @@ interaction.onTempPanPreview = (active) => {
   cameraOverlay.setPanReady(active);
 };
 
-document.addEventListener('keydown', e => {
-  const t = e.target;
-  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
-  if (t.isContentEditable) return;
-
-  if (e.code === 'Escape') {
-    if (measurements.cancelDraft()) {
-      e.preventDefault();
-      return;
-    }
-    if (labels.cancelDraft()) {
-      e.preventDefault();
-      return;
-    }
-  }
-
-  if (e.code !== 'Delete') return;
-  if (interaction.mode === 'camera') return;
-  if (measurements.deleteSelected()) {
-    e.preventDefault();
-    return;
-  }
+/**
+ * Delete whatever is selected. Overlays first (they can be selected while a
+ * body is), then setup-mode scene objects.
+ * @returns {boolean} whether the keystroke was consumed.
+ */
+function _deleteSelection() {
+  if (interaction.mode === 'camera') return false;
+  if (measurements.deleteSelected()) return true;
   if (labels.deleteSelected()) {
-    e.preventDefault();
     _onSandboxSelect(null);
     objectBrowser?.scheduleRefresh();
-    return;
+    return true;
   }
-  if (appMode !== 'setup') return;
-  if (!_currentSelection) return;
+  if (appMode !== 'setup') return false;
+  if (!_currentSelection) return false;
 
   if (_currentSelection.type === 'measurement') {
     measurements.deleteSelected();
-    e.preventDefault();
-    return;
+    return true;
   }
 
   if (_currentSelection.type === 'constraint') {
-    const c = engine.constraints.find(x => x.id === _currentSelection.id);
-    if (!c) {
+    const constraint = engine.constraints.find(x => x.id === _currentSelection.id);
+    if (!constraint) {
       _onSandboxSelect(null);
-      return;
+      return false;
     }
-    e.preventDefault();
-    engine.removeConstraint(c);
+    engine.removeConstraint(constraint);
     objectBrowser.scheduleRefresh();
     _onSandboxSelect(null);
-    return;
+    return true;
   }
 
   if (_currentSelection.type === 'aggregate') {
-    const ids = [...(_currentSelection.memberIds ?? [])];
-    e.preventDefault();
-    for (const id of ids) {
+    for (const id of [...(_currentSelection.memberIds ?? [])]) {
       const body = engine.bodies.find(b => b.id === id);
       if (!body || body._newtonType === 'metric-basis') continue;
       engine.removeBody(body);
@@ -919,45 +893,46 @@ document.addEventListener('keydown', e => {
     }
     objectBrowser.scheduleRefresh();
     _onSandboxSelect(null);
-    return;
+    return true;
   }
 
   if (_currentSelection.type === 'rope') {
-    const ropeId = _currentSelection.ropeId;
-    if (!ropeId) return;
-    e.preventDefault();
-    const ids = engine.bodies.filter(b => b._ropeId === ropeId).map(b => b.id);
-    removeRope(engine, ropeId);
-    for (const id of ids) interaction.notifyBodyRemoved(id);
-    objectBrowser.scheduleRefresh();
-    _onSandboxSelect(null);
-    return;
+    if (!_currentSelection.ropeId) return false;
+    _removeRopeById(_currentSelection.ropeId);
+    return true;
   }
 
-  if (_currentSelection.type !== 'body') return;
+  if (_currentSelection.type !== 'body') return false;
 
   const body = engine.bodies.find(b => b.id === _currentSelection.id);
   if (!body) {
     _onSandboxSelect(null);
-    return;
+    return false;
   }
-  if (body._newtonType === 'metric-basis') return;
-  e.preventDefault();
+  if (body._newtonType === 'metric-basis') return false;
+
+  // A rope segment stands in for the whole rope.
   if (body._ropeSegment && body._ropeId) {
-    const ropeId = body._ropeId;
-    const ids = engine.bodies.filter(b => b._ropeId === ropeId).map(b => b.id);
-    removeRope(engine, ropeId);
-    for (const id of ids) interaction.notifyBodyRemoved(id);
-    objectBrowser.scheduleRefresh();
-    _onSandboxSelect(null);
-    return;
+    _removeRopeById(body._ropeId);
+    return true;
   }
+
   const removedId = body.id;
   engine.removeBody(body);
   interaction.notifyBodyRemoved(removedId);
   objectBrowser.scheduleRefresh();
   _onSandboxSelect(null);
-});
+  return true;
+}
+
+/** Remove every segment of a rope and clear the selection. */
+function _removeRopeById(ropeId) {
+  const ids = engine.bodies.filter(b => b._ropeId === ropeId).map(b => b.id);
+  removeRope(engine, ropeId);
+  for (const id of ids) interaction.notifyBodyRemoved(id);
+  objectBrowser.scheduleRefresh();
+  _onSandboxSelect(null);
+}
 
 svg.addEventListener('wheel', e => {
   e.preventDefault();
@@ -1133,13 +1108,6 @@ settingsBackdrop?.addEventListener('click', e => {
 
 document.addEventListener('click', e => {
   if (presetMenuWrap && !presetMenuWrap.contains(e.target)) _closePresetMenu();
-});
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    _closeSettings();
-    _closePresetMenu();
-  }
 });
 
 // ── Tool buttons (palette + object bar) ───────────────────────────

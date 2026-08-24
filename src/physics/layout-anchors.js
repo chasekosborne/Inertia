@@ -3,7 +3,7 @@
  */
 
 import Matter from 'matter-js';
-import { createGround } from './bodies.js';
+import { createGround, anchorContainsWorldPoint } from './bodies.js';
 import { constraintAnchorWorld, isSpringConstraint } from './constraints.js';
 import { snapWorldCoord } from '../grid.js';
 import { hangingBodiesFromRopes } from './rope.js';
@@ -412,6 +412,11 @@ export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
       const overSlab = Math.abs(lx) <= hw + 8 && Math.abs(ly) <= hh + 8;
       if (!overSlab && d > hitPx) continue;
       if (overSlab) d = Math.min(d, hitPx);
+    } else if (body._newtonType === 'anchor') {
+      if (!anchorContainsWorldPoint(body, wx, wy)) continue;
+      world = { x: body.position.x, y: body.position.y };
+      local = { x: 0, y: 0 };
+      d = 0;
     } else if (body._newtonType === 'box' || body._newtonType === 'wedge') {
       const hw = (body._width ?? body._baseWidth ?? 40) / 2;
       const hh = (body._height ?? 40) / 2;

@@ -36,6 +36,8 @@ export class TimelineBar {
     this.deps = deps;
 
     this.elements = {
+      bar: byId('timeline-bar'),
+
       // Main transport (top toolbar)
       playPause: byId('btn-play-pause'),
       iconPlay: byId('icon-play'),
@@ -101,6 +103,7 @@ export class TimelineBar {
 
     this.refreshReviewIcon();
     this.refreshTransport();
+    this._syncBarVisibility();
   }
 
   /** Main play/capture button: icon swap + title. */
@@ -153,6 +156,7 @@ export class TimelineBar {
     el.frameCount.textContent = `${total} fr`;
     const last = recorder.frames[total - 1];
     if (last) el.timeDisplay.textContent = `${last.t.toFixed(3)} s`;
+    this._syncBarVisibility();
   }
 
   /** Playback seeked: move the thumb and the readouts to this frame. */
@@ -178,6 +182,7 @@ export class TimelineBar {
     this._setFill(0);
     el.frameCount.textContent = '0 fr';
     el.timeDisplay.textContent = '0.000 s';
+    this._syncBarVisibility();
   }
 
   /** Current scrubber position, for callers that need it without a seek. */
@@ -191,6 +196,13 @@ export class TimelineBar {
   _setFill(frameIndex) {
     const max = parseInt(this.elements.scrubber.max, 10) || 1;
     this.elements.fill.style.width = `${(frameIndex / max) * 100}%`;
+  }
+
+  /** Slide the bar in once footage exists; collapse when cleared. */
+  _syncBarVisibility() {
+    const hasFrames = this.deps.recorder.frameCount > 0;
+    this.elements.bar?.classList.toggle('collapsed', !hasFrames);
+    this.elements.bar?.setAttribute('aria-hidden', String(!hasFrames));
   }
 
   /** Jump to the first recorded frame (keyboard: I). */

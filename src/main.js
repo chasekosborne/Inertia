@@ -50,16 +50,15 @@ const btnSettings   = document.getElementById('btn-settings');
 const settingsBackdrop = document.getElementById('settings-backdrop');
 const btnSettingsClose = document.getElementById('btn-settings-close');
 
-// Toolbar
-const btnGrid       = document.getElementById('btn-grid');
-const btnSnap       = document.getElementById('btn-snap');
-const btnOrigin     = document.getElementById('btn-origin');
-const btnVectors    = document.getElementById('btn-vectors');
-const btnTraces     = document.getElementById('btn-traces');
+// Settings — display toggles (grid, snap, origin, vectors, traces)
+const envGridToggle    = document.getElementById('env-grid-toggle');
+const envSnapToggle    = document.getElementById('env-snap-toggle');
+const envOriginToggle  = document.getElementById('env-origin-toggle');
+const envVectorsToggle = document.getElementById('env-vectors-toggle');
+const envTracesToggle  = document.getElementById('env-traces-toggle');
+
 const btnAddGraph   = document.getElementById('btn-add-graph');
 const canvasContainer = document.getElementById('canvas-container');
-const timelineBar   = document.getElementById('timeline-bar');
-
 // Canvas / status
 const svg           = document.getElementById('sandbox-svg');
 const cameraOverlaySvg = document.getElementById('camera-overlay');
@@ -224,9 +223,9 @@ const exportControls = new ExportControls({
   applyCameraRig: () => _applyCameraRig(),
   getViewSize:    () => _viewSize(),
   getViewToggles: () => ({
-    grid:    btnGrid.classList.contains('active'),
-    vectors: btnVectors.classList.contains('active'),
-    traces:  btnTraces.classList.contains('active'),
+    grid:    !!envGridToggle?.checked,
+    vectors: !!envVectorsToggle?.checked,
+    traces:  !!envTracesToggle?.checked,
   }),
   getStatus: () => statusMode.innerHTML,
   setStatus: (html) => { statusMode.innerHTML = html; },
@@ -446,12 +445,6 @@ renderer.onSelect(_onSandboxSelect);
 // 'live'   : physics running, recording active (if toggled).
 // 'review' : physics frozen, scrubbing through recorded frames.
 let appMode   = 'setup';
-
-function _syncTimelineVisibility() {
-  const hasFrames = recorder.frameCount > 0;
-  timelineBar?.classList.toggle('collapsed', !hasFrames);
-  timelineBar?.setAttribute('aria-hidden', String(!hasFrames));
-}
 
 function setMode(mode) {
   appMode = mode;
@@ -691,7 +684,7 @@ function _toggleCaptureSession() {
     recorder.start();          // resumes / continues: does NOT clear frames
     if (recorder.frameCount === 0) {
       recorder.capture(engine.simTime, engine.bodies, engine.constraints);
-      if (btnTraces.classList.contains('active')) {
+      if (envTracesToggle?.checked) {
         renderer.sampleTraces(engine.bodies);
       }
     }
@@ -734,30 +727,8 @@ function _clearRecording() {
   _syncGraphs(true);
 }
 
-// ── View toggles ──────────────────────────────────────────────────
-btnGrid.addEventListener('click', () => {
-  renderer.setShowGrid(btnGrid.classList.toggle('active'));
-});
-btnSnap.addEventListener('click', () => {
-  _snapEnabled = btnSnap.classList.toggle('active');
-  interaction.setSnapEnabled(_snapEnabled);
-});
-btnOrigin?.addEventListener('click', () => {
-  const on = btnOrigin.classList.toggle('active');
-  btnOrigin.setAttribute('aria-pressed', String(on));
-  renderer.setShowMetricOrigin(on);
-  interaction.setMetricOriginSelectable(on);
-  // Drop selection if the hidden origin was selected
-  if (!on && _currentSelection?.type === 'body') {
-    const b = engine.bodies.find(x => x.id === _currentSelection.id);
-    if (b?._newtonType === 'metric-basis') _onSandboxSelect(null);
-  }
-});
-btnVectors.addEventListener('click', () => {
-  renderer.setShowVectors(btnVectors.classList.toggle('active'));
-});
-btnTraces.addEventListener('click', () => {
-  const on = btnTraces.classList.toggle('active');
+// ── View toggles (settings panel) ─────────────────────────────────
+function _applyTracesToggle(on) {
   renderer.setShowTraces(on);
   if (!on) {
     renderer.clearTraces();
@@ -782,6 +753,16 @@ function _applyOriginToggle(on) {
   }
 }
 
+// ── Interaction / selection ───────────────────────────────────────
+const interaction = new InteractionHandler(svg, engine, _onSandboxSelect, camera, renderer.interactionGhostLayer);
+
+_snapEnabled = !!envSnapToggle?.checked;
+interaction.setSnapEnabled(_snapEnabled);
+renderer.setShowGrid(!!envGridToggle?.checked);
+renderer.setShowVectors(!!envVectorsToggle?.checked);
+_applyTracesToggle(!!envTracesToggle?.checked);
+_applyOriginToggle(!!envOriginToggle?.checked);
+
 envGridToggle?.addEventListener('change', () => {
   renderer.setShowGrid(!!envGridToggle.checked);
 });
@@ -798,9 +779,6 @@ envVectorsToggle?.addEventListener('change', () => {
 envTracesToggle?.addEventListener('change', () => {
   _applyTracesToggle(!!envTracesToggle.checked);
 });
-
-// ── Interaction / selection ───────────────────────────────────────
-const interaction = new InteractionHandler(svg, engine, _onSandboxSelect, camera, renderer.interactionGhostLayer);
 
 const editorContext = createEditorContext({
   engine, camera, svg, renderer,
@@ -1145,7 +1123,7 @@ document.querySelectorAll('.obj-btn-ground').forEach(btn => {
   btn.addEventListener('click', () => _activateTool('ground', 'Ground'));
 });
 
-// Object / constraint tools: click to change mode (anchor = click-place, rod|spring = drag between bodies)
+// Object / constraint tools: click to change mode (rod|spring|rope = drag between bodies)
 document.querySelectorAll('.obj-mode-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
@@ -1173,13 +1151,13 @@ function _viewLaidOut() {
   return w >= 2 && h >= 2;
 }
 
-/** Pan + zoom so the metric basis sits at the centre with a grid-aligned viewport fit. */
-function _frameMetricBasis() {
+/** Pan + zoom so the metric basis sits at the centre of the simulator view. */
+function _frameMetricBasis(scale = DEFAULT_CAMERA_SCALE) {
   const { width: vw, height: vh } = _viewSize();
   const origin = getMetricOriginWorldPx();
   if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return;
-  cameraRig.fitGridToViewport(vw, vh, origin.x, origin.y);
-  cameraRig.applyToCamera(camera, vw, vh);
+  camera.centerOnWorld(origin.x, origin.y, vw, vh, scale);
+  cameraRig.syncFromCamera(camera, vw, vh);
   renderer.syncMetricOrigin();
 }
 
@@ -1187,13 +1165,13 @@ function _frameMetricBasis() {
  * Frame the metric origin once the canvas has a real size.
  * Avoids locking the camera to the 800×600 fallback before layout.
  */
-function _frameMetricBasisWhenReady(attempt = 0, onReady = null) {
+function _frameMetricBasisWhenReady(scale = DEFAULT_CAMERA_SCALE, attempt = 0, onReady = null) {
   if (_viewLaidOut() || attempt >= 60) {
-    _frameMetricBasis();
+    _frameMetricBasis(scale);
     onReady?.();
     return;
   }
-  requestAnimationFrame(() => _frameMetricBasisWhenReady(attempt + 1, onReady));
+  requestAnimationFrame(() => _frameMetricBasisWhenReady(scale, attempt + 1, onReady));
 }
 
 function _whenViewReady(fn, attempt = 0) {

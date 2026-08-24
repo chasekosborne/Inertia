@@ -620,9 +620,7 @@ export class SvgRenderer {
         class: 'body-shape wedge-body wedge-ring',
       }));
     } else if (type === 'anchor') {
-      // Inverted triangle on pivot circle at body.position
-      g.removeAttribute('transform'); // anchor uses absolute coords
-      this._drawAnchor(g, x, y);
+      this._drawAnchor(g);
       return;
     } else if (type === 'ground') {
       const w = body._width  ?? 400;
@@ -649,19 +647,19 @@ export class SvgRenderer {
     }
   }
 
-  _drawAnchor(g, x, y) {
+  _drawAnchor(g) {
     const r = 4;
     const size = 14;
     const triH = size * 1.4;
-    // Inverted triangle above pivot circle; hinge at circle centre (x, y).
+    // Inverted triangle above pivot circle; hinge at local origin (body centre).
     g.appendChild(el('polygon', {
-      points: `${x},${y - r} ${x - size},${y - r - triH} ${x + size},${y - r - triH}`,
-      fill: 'none', stroke: STYLE.ink, 'stroke-width': 2,
+      points: `0,${-r} ${-size},${-r - triH} ${size},${-r - triH}`,
+      fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': 2,
       class: 'body-shape',
     }));
     g.appendChild(el('circle', {
-      cx: x, cy: y, r,
-      fill: '#fff', stroke: STYLE.ink, 'stroke-width': 2,
+      cx: 0, cy: 0, r,
+      fill: '#fff', stroke: STYLE.anchorStroke, 'stroke-width': 2,
     }));
   }
 

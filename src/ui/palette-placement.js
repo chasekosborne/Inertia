@@ -12,7 +12,7 @@
  */
 
 import {
-  createPointMass, createBall, createBox, createWedge,
+  createPointMass, createBall, createBox, createWedge, createAnchor,
 } from '../physics/bodies.js';
 import { snapWorldCoord } from '../grid.js';
 
@@ -22,6 +22,7 @@ const FACTORIES = {
   'point-mass': createPointMass,
   'box': createBox,
   'wedge': createWedge,
+  'anchor': createAnchor,
 };
 
 /** Class put on the canvas while a drag hovers it. */

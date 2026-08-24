@@ -31,6 +31,8 @@ export class Playback {
   get frameIndex() { return this._frameIdx; }
   get frameCount()  { return this._recorder.frames.length; }
   get isPlaying()   { return this._autoPlay; }
+  /** 1 = forward, -1 = reverse. Only meaningful while `isPlaying`. */
+  get playDirection() { return this._playDir; }
   get atStart()     { return this._frameIdx === 0; }
   get atEnd()       { return this._frameIdx >= this.frameCount - 1; }
 

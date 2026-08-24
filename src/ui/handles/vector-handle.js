@@ -107,7 +107,12 @@ export class VectorHandle {
 
     // Setup only: editing v₀ / F while live or scrubbing a recording writes a
     // value the next physics step or seek immediately overwrites.
-    if (!body || !context.canEdit()) {
+    //
+    // Select tool only: with v₀ = 0 the grab circle sits on the body centre,
+    // which is exactly where you press to start a rod / spring / rope from
+    // that body, or to rotate it. `interaction._onDown` bails on anything
+    // inside this handle, so leaving it live would swallow those gestures.
+    if (!body || !context.canEdit() || context.getToolMode() !== 'select') {
       this.reset();
       return;
     }

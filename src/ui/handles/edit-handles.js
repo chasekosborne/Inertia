@@ -71,8 +71,11 @@ export class EditHandles {
   /** Called every render frame. */
   sync() {
     const { context } = this;
-    // Camera is an isolated mode; live hides all editing chrome.
-    if (context.getToolMode() === 'camera' || context.getAppMode() === 'live') {
+    // Select tool only, and never while live. In the creation tools these dots
+    // sit on top of the very anchors you press to start a new link, and
+    // `interaction._onDown` bails on anything carrying the handle attribute —
+    // ground corner handles in particular would swallow the gesture.
+    if (context.getToolMode() !== 'select' || context.getAppMode() === 'live') {
       if (!this._drag) this.reset();
       return;
     }

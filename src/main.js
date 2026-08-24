@@ -33,6 +33,7 @@ import { ScaleHandles } from './ui/handles/scale-handles.js';
 import { VectorHandle } from './ui/handles/vector-handle.js';
 import { EditHandles } from './ui/handles/edit-handles.js';
 import { ObjectClipboard } from './ui/object-clipboard.js';
+import { TimelineBar } from './ui/timeline-bar.js';
 
 
 // ── DOM refs ──────────────────────────────────────────────────────
@@ -51,46 +52,22 @@ const settingsBackdrop = document.getElementById('settings-backdrop');
 const btnSettingsClose = document.getElementById('btn-settings-close');
 
 // Toolbar
-const btnPlayPause  = document.getElementById('btn-play-pause');
-const speedSlider   = document.getElementById('speed-slider');
-const speedLabel    = document.getElementById('speed-label');
 const btnGrid       = document.getElementById('btn-grid');
 const btnSnap       = document.getElementById('btn-snap');
 const btnOrigin     = document.getElementById('btn-origin');
 const btnVectors    = document.getElementById('btn-vectors');
 const btnTraces     = document.getElementById('btn-traces');
 const btnAddGraph   = document.getElementById('btn-add-graph');
-const iconPlay      = document.getElementById('icon-play');
-const iconPause     = document.getElementById('icon-pause');
 const canvasContainer = document.getElementById('canvas-container');
 
 // Timeline
-const tlBadge       = document.getElementById('tl-mode-badge');
-const tlJumpStart   = document.getElementById('tl-jump-start');
-const tlRevFast     = document.getElementById('tl-rev-fast');
-const tlRevStep     = document.getElementById('tl-rev-step');
-const tlPlayReview  = document.getElementById('tl-play-review');
-const tlFwdStep     = document.getElementById('tl-fwd-step');
-const tlFwdFast     = document.getElementById('tl-fwd-fast');
-const tlJumpEnd       = document.getElementById('tl-jump-end');
-const tlClearFrames   = document.getElementById('tl-clear-frames');
-const tlScrubber    = document.getElementById('tl-scrubber');
-const tlFill        = document.getElementById('tl-fill');
-const tlFrameCount  = document.getElementById('tl-frame-count');
-const tlTimeDisplay = document.getElementById('tl-time-display');
-const tlIconPlay    = document.getElementById('tl-icon-play');
-const tlIconPause   = document.getElementById('tl-icon-pause');
-const tlIconRev     = document.getElementById('tl-icon-rev');
 
 // Canvas / status
 const svg           = document.getElementById('sandbox-svg');
 const cameraOverlaySvg = document.getElementById('camera-overlay');
-const simTimeEl     = document.getElementById('sim-time');
 const statusMode    = document.getElementById('status-mode');
 const statusBodies  = document.getElementById('status-bodies');
 const statusConstr  = document.getElementById('status-constraints');
-const statusRec     = document.getElementById('status-record');
-const recFramesEl   = document.getElementById('rec-frames');
 const propsContent  = document.getElementById('properties-content');
 const propsWrap     = document.getElementById('properties-wrap');
 const btnPropsToggle = document.getElementById('btn-props-toggle');
@@ -126,6 +103,14 @@ function _applyCameraRig({ fitView = true } = {}) {
 
 const recorder = new Recorder();
 const playback = new Playback(recorder, engine);
+
+/** Transport button, mode badge, review controls, scrubber, readouts. */
+const timeline = new TimelineBar({
+  engine, recorder, playback,
+  enterReview:    () => _enterReview(),
+  toggleCapture:  () => _toggleCaptureSession(),
+  clearRecording: () => _clearRecording(),
+});
 
 /** Floating observable graphs over the canvas. */
 const graphHost = new GraphHost({
@@ -168,15 +153,12 @@ const graphHost = new GraphHost({
     return out;
   },
   listMeasurements: () => measurements.toScene(),
-  getScrubIndex: () => {
-    if (recorder.frameCount === 0) return 0;
-    return parseInt(tlScrubber.value, 10) || 0;
-  },
+  getScrubIndex: () => timeline.getScrubIndex(),
   onSeek: (frameIndex) => {
     _enterReview();
     playback.stop();
     playback.seek(frameIndex);
-    _updateReviewPlayIcon();
+    timeline.refreshReviewIcon();
   },
   getSelectedBodyId: () => (
     _currentSelection?.type === 'body' ? _currentSelection.id : null
@@ -496,41 +478,7 @@ let appMode   = 'setup';
 
 function setMode(mode) {
   appMode = mode;
-
-  const badge = tlBadge;
-  badge.className = 'tl-badge';
-  if (mode === 'setup') {
-    badge.classList.add('tl-setup');
-    badge.textContent = 'SETUP';
-  } else if (mode === 'live') {
-    badge.classList.add('tl-live');
-    badge.textContent = '● LIVE';
-  } else {
-    badge.classList.add('tl-review');
-    badge.textContent = 'REVIEW';
-  }
-
-  // Timeline controls: enabled only when there is recorded data
-  const hasFrames = recorder.frameCount > 0;
-  tlJumpStart.disabled   = !hasFrames;
-  tlRevFast.disabled     = !hasFrames;
-  tlRevStep.disabled     = !hasFrames;
-  tlFwdStep.disabled     = !hasFrames;
-  tlFwdFast.disabled     = !hasFrames;
-  tlJumpEnd.disabled     = !hasFrames;
-  tlScrubber.disabled    = !hasFrames;
-  tlClearFrames.disabled = !hasFrames;
-
-  // Scrubber range
-  if (hasFrames) {
-    tlScrubber.max = recorder.frameCount - 1;
-  }
-
-  // Play-review button icon
-  _updateReviewPlayIcon();
-
-  // Main transport button (play / pause + capture)
-  _updateMainTransportButton();
+  timeline.syncToMode(mode);
 }
 
 // ── Continuous render loop ────────────────────────────────────────
@@ -572,17 +520,15 @@ requestAnimationFrame(renderLoop);
 
 // ── Physics step callback (recording + time display) ──────────────
 engine.onStep(simTime => {
-  simTimeEl.textContent = `t = ${simTime.toFixed(3)} s`;
+  timeline.setSimTime(simTime);
   if (recorder.isRecording) {
     recorder.capture(simTime, engine.bodies, engine.constraints);
     // Trail length only advances with recorded frames (not every RAF tick).
     if (btnTraces.classList.contains('active')) {
       renderer.sampleTraces(engine.bodies);
     }
-    recFramesEl.textContent = recorder.frameCount;
-    tlClearFrames.disabled = false;
-    // Keep scrubber range and fill updated as frames accumulate
-    _updateScrubberFromLive();
+    timeline.setRecordedFrames(recorder.frameCount);
+    timeline.syncFromRecording();
     _syncGraphs();
   }
 });
@@ -595,21 +541,13 @@ function _syncReviewTraces(frameIdx = playback.frameIndex) {
 
 // ── Playback seeks ────────────────────────────────────────────────
 playback.onChange((frameIdx, event) => {
-  _updateScrubberThumb(frameIdx);
-  const frame = recorder.frames[frameIdx];
-  if (frame) {
-    tlTimeDisplay.textContent = `${frame.t.toFixed(3)} s`;
-    simTimeEl.textContent     = `t = ${frame.t.toFixed(3)} s`;
-  }
+  timeline.syncToFrame(frameIdx);
   if (event === 'end' || event === 'start') {
-    _updateReviewPlayIcon();
+    timeline.refreshReviewIcon();
   }
   _syncReviewTraces(frameIdx);
   _syncGraphs(true);
 });
-
-// ── Toolbar: single Run / Capture control ──────────────────────────
-btnPlayPause.addEventListener('click', () => _toggleCaptureSession());
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
@@ -654,23 +592,23 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') {
     e.preventDefault();
     if (appMode === 'review') {
-      _toggleReviewPlay();
+      timeline.toggleReviewPlay();
     } else {
       _toggleCaptureSession();
     }
   }
   if (e.code === 'ArrowRight' && appMode === 'review') {
-    e.preventDefault(); playback.stepForward(); _updateReviewPlayIcon();
+    e.preventDefault(); playback.stepForward(); timeline.refreshReviewIcon();
   }
   if (e.code === 'ArrowLeft' && appMode === 'review') {
-    e.preventDefault(); playback.stepBack(); _updateReviewPlayIcon();
+    e.preventDefault(); playback.stepBack(); timeline.refreshReviewIcon();
   }
   if (e.code === 'KeyI') {
-    e.preventDefault(); _reviewJumpStart();
+    e.preventDefault(); timeline.jumpToStart();
   }
   if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
-    if (appMode === 'review') _toggleReviewPlay();
+    if (appMode === 'review') timeline.toggleReviewPlay();
     else _activateTool('rotate', 'Rotate');
   }
   if (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -780,7 +718,7 @@ function _toggleCaptureSession() {
   if (capturing) {
     engine.pause();
     recorder.stop();
-    statusRec.classList.add('hidden');
+    timeline.setRecording(false);
     exportControls.syncButtons();
     setMode('setup');
   } else {
@@ -788,139 +726,48 @@ function _toggleCaptureSession() {
     recorder.start();          // resumes / continues: does NOT clear frames
     if (recorder.frameCount === 0) {
       recorder.capture(engine.simTime, engine.bodies, engine.constraints);
-      recFramesEl.textContent = recorder.frameCount;
       if (btnTraces.classList.contains('active')) {
         renderer.sampleTraces(engine.bodies);
       }
     }
-    statusRec.classList.remove('hidden');
+    timeline.setRecording(true);
     exportControls.syncButtons(true);
     if (!engine.running) engine.play();
     setMode('live');
   }
-  _updateMainTransportButton();
+  timeline.refreshTransport();
 }
 
-function _updateMainTransportButton() {
-  const capturing = recorder.isRecording && engine.running;
-  iconPlay.style.display  = capturing ? 'none' : '';
-  iconPause.style.display = capturing ? ''     : 'none';
-  btnPlayPause.classList.toggle('recording', capturing);
-  btnPlayPause.title = capturing
-    ? 'Stop (Space)'
-    : 'Play (Space)';
-}
-
-// ── Timeline: review play/pause ───────────────────────────────────
-tlPlayReview.addEventListener('click', () => _toggleReviewPlay());
-
-function _toggleReviewPlay() {
-  if (recorder.frameCount === 0) return;
-
-  if (appMode !== 'review') {
-    if (recorder.isRecording) {
-      recorder.stop();
-      statusRec.classList.add('hidden');
-      exportControls.syncButtons();
-    }
-    if (engine.running) engine.pause();
-    _updateMainTransportButton();
-    setMode('review');
-  }
-
-  if (playback.isPlaying) {
-    playback.stop();
-  } else {
-    const dir = playback.atEnd ? -1 : 1; // reverse from end, forward otherwise
-    playback.play(dir, 1);
-  }
-  _updateReviewPlayIcon();
-}
-
-function _updateReviewPlayIcon() {
-  const playing = playback.isPlaying;
-  const rev     = playing && playback._playDir === -1;
-  tlIconPlay.style.display  = (!playing)      ? '' : 'none';
-  tlIconPause.style.display = (playing && !rev) ? '' : 'none';
-  tlIconRev.style.display   = rev              ? '' : 'none';
-  tlPlayReview.classList.toggle('active', playing);
-}
-
-// ── Timeline: clear all frames ────────────────────────────────────
-tlClearFrames.addEventListener('click', () => {
+function _enterReview() {
+  if (appMode === 'review') return;
   if (recorder.isRecording) {
     recorder.stop();
-    statusRec.classList.add('hidden');
+    timeline.setRecording(false);
+    exportControls.syncButtons();
+  }
+  if (engine.running) engine.pause();
+  timeline.refreshTransport();
+  setMode('review');
+}
+
+/** Drop the recording and every view derived from it. */
+function _clearRecording() {
+  if (recorder.isRecording) {
+    recorder.stop();
+    timeline.setRecording(false);
   }
   if (appMode === 'review') {
     playback.stop();
     if (engine.running) engine.pause();
-    _updateMainTransportButton();
+    timeline.refreshTransport();
   }
   recorder.clear();
   renderer.clearTraces();
-  tlScrubber.value = 0; tlScrubber.max = 0;
-  _updateFill(0);
-  tlFrameCount.textContent  = '0 fr';
-  tlTimeDisplay.textContent = '0.000 s';
+  timeline.reset();
   exportControls.syncButtons(true);
   setMode('setup');
   _syncGraphs(true);
-});
-
-// ── Timeline: jump / step / fast ─────────────────────────────────
-tlJumpStart.addEventListener('click',  _reviewJumpStart);
-tlJumpEnd.addEventListener('click',    () => { _enterReview(); playback.jumpToEnd();   _updateReviewPlayIcon(); });
-tlRevStep.addEventListener('click',    () => { _enterReview(); playback.stepBack();    _updateReviewPlayIcon(); });
-tlFwdStep.addEventListener('click',    () => { _enterReview(); playback.stepForward(); _updateReviewPlayIcon(); });
-tlRevFast.addEventListener('click',    () => {
-  _enterReview();
-  playback.play(-1, 2);
-  _updateReviewPlayIcon();
-});
-tlFwdFast.addEventListener('click',    () => {
-  _enterReview();
-  playback.play(1, 2);
-  _updateReviewPlayIcon();
-});
-
-function _reviewJumpStart() {
-  _enterReview();
-  playback.jumpToStart();
-  _updateReviewPlayIcon();
 }
-
-function _enterReview() {
-  if (appMode !== 'review') {
-    if (recorder.isRecording) {
-      recorder.stop();
-      statusRec.classList.add('hidden');
-      exportControls.syncButtons();
-    }
-    if (engine.running) engine.pause();
-    _updateMainTransportButton();
-    setMode('review');
-  }
-}
-
-// ── Scrubber drag ─────────────────────────────────────────────────
-tlScrubber.addEventListener('mousedown', () => {
-  _enterReview();
-  playback.stop();
-  _updateReviewPlayIcon();
-});
-tlScrubber.addEventListener('input', () => {
-  const idx = parseInt(tlScrubber.value, 10);
-  playback.seek(idx);
-  _updateFill(idx);
-});
-
-// ── Speed ─────────────────────────────────────────────────────────
-speedSlider.addEventListener('input', () => {
-  const v = parseFloat(speedSlider.value);
-  engine.setSpeed(v);
-  speedLabel.textContent = `${v.toFixed(1)}×`;
-});
 
 // ── View toggles ──────────────────────────────────────────────────
 btnGrid.addEventListener('click', () => {
@@ -1131,14 +978,11 @@ function _finishSceneLoad(source) {
   editHandles.reset();
   renderer.render();
   playback.stop();
-  tlScrubber.value = 0; tlScrubber.max = 0;
-  _updateFill(0);
-  tlFrameCount.textContent  = '0 fr';
-  tlTimeDisplay.textContent = '0.000 s';
-  simTimeEl.textContent     = 't = 0.000 s';
+  timeline.reset();
+  timeline.setSimTime(0);
   exportControls.syncButtons(true);
   setMode('setup');
-  _updateMainTransportButton();
+  timeline.refreshTransport();
   sceneSession.updateResetButton();
   _syncGraphs(true);
   graphHost.refreshSweepOptions();
@@ -1173,7 +1017,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
   history.clear();
   if (engine.running) engine.pause();
   recorder.stop();
-  statusRec.classList.add('hidden');
+  timeline.setRecording(false);
   measurements.clearAll();
   labels.clearAll();
 
@@ -1465,29 +1309,6 @@ function _whenViewReady(fn, attempt = 0) {
     return;
   }
   requestAnimationFrame(() => _whenViewReady(fn, attempt + 1));
-}
-
-function _updateScrubberFromLive() {
-  const total = recorder.frameCount;
-  tlScrubber.max   = Math.max(0, total - 1);
-  tlScrubber.value = total - 1;
-  _updateFill(total - 1);
-  tlFrameCount.textContent = `${total} fr`;
-  const last = recorder.frames[total - 1];
-  if (last) tlTimeDisplay.textContent = `${last.t.toFixed(3)} s`;
-}
-
-function _updateScrubberThumb(idx) {
-  tlScrubber.max   = Math.max(0, recorder.frameCount - 1);
-  tlScrubber.value = idx;
-  _updateFill(idx);
-  tlFrameCount.textContent = `${idx} / ${recorder.frameCount} fr`;
-}
-
-function _updateFill(idx) {
-  const max = parseInt(tlScrubber.max, 10) || 1;
-  const pct = (idx / max) * 100;
-  tlFill.style.width = `${pct}%`;
 }
 
 // ── Boot ─────────────────────────────────────────────────────────

@@ -24,8 +24,6 @@ import { Camera, DEFAULT_CAMERA_SCALE } from './camera/camera.js';
 import { CameraRig }        from './camera/camera-rig.js';
 import { CameraOverlay }    from './ui/camera-overlay.js';
 import { HistoryManager, captureSnapshot, applySnapshot } from './history.js';
-import { createPointMass, createBall, createBox, createWedge } from './physics/bodies.js';
-import { snapWorldCoord } from './grid.js';
 import { setMetricOriginEngine, getMetricOriginWorldPx } from './world-origin.js';
 import { paramsForScene } from './experiment/params.js';
 import { createEditorContext } from './ui/handles/editor-context.js';
@@ -34,6 +32,7 @@ import { VectorHandle } from './ui/handles/vector-handle.js';
 import { EditHandles } from './ui/handles/edit-handles.js';
 import { ObjectClipboard } from './ui/object-clipboard.js';
 import { TimelineBar } from './ui/timeline-bar.js';
+import { PalettePlacement } from './ui/palette-placement.js';
 
 
 // ── DOM refs ──────────────────────────────────────────────────────
@@ -59,8 +58,6 @@ const btnVectors    = document.getElementById('btn-vectors');
 const btnTraces     = document.getElementById('btn-traces');
 const btnAddGraph   = document.getElementById('btn-add-graph');
 const canvasContainer = document.getElementById('canvas-container');
-
-// Timeline
 
 // Canvas / status
 const svg           = document.getElementById('sandbox-svg');
@@ -838,6 +835,14 @@ const editHandles = new EditHandles(editorContext);
 /** Ctrl+C / Ctrl+V for the current selection. */
 const objectClipboard = new ObjectClipboard(editorContext);
 
+/** Drag a body out of the object palette onto the canvas. */
+const palettePlacement = new PalettePlacement({
+  svg, camera, engine,
+  getToolMode: () => interaction.mode,
+  getSnapEnabled: () => _snapEnabled,
+  onPlaced: (body) => _onSandboxSelect({ type: 'body', id: body.id }),
+});
+
 window.addEventListener('resize', () => {
   cameraOverlay.syncSize();
   if (interaction.mode === 'camera') cameraOverlay.sync();
@@ -1171,11 +1176,6 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
   });
 });
 
-// ── Palette drag-to-place ─────────────────────────────────────────
-// Drag an obj-btn onto the canvas to create the object at the drop point.
-
-let _paletteDrag = null;  // { type, ghostEl }
-
 // Ground in the add bar activates drag-to-lay placement (palette-style), not palette drag-drop.
 document.querySelectorAll('.obj-btn-ground').forEach(btn => {
   btn.addEventListener('click', () => _activateTool('ground', 'Ground'));
@@ -1190,79 +1190,7 @@ document.querySelectorAll('.obj-mode-btn').forEach(btn => {
   });
 });
 
-document.querySelectorAll('.obj-btn[data-drag-place]').forEach(btn => {
-  btn.addEventListener('pointerdown', e => {
-    if (interaction.mode === 'camera') return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    btn.setPointerCapture(e.pointerId);
-
-    const type  = btn.dataset.tool;
-    const ghost = document.createElement('div');
-    ghost.id = 'palette-drag-ghost';
-    ghost.innerHTML = btn.querySelector('svg').outerHTML;
-    ghost.style.left = `${e.clientX}px`;
-    ghost.style.top  = `${e.clientY}px`;
-    document.body.appendChild(ghost);
-
-    _paletteDrag = { type, ghostEl: ghost };
-  });
-
-  btn.addEventListener('pointermove', e => {
-    if (!_paletteDrag) return;
-    _paletteDrag.ghostEl.style.left = `${e.clientX}px`;
-    _paletteDrag.ghostEl.style.top  = `${e.clientY}px`;
-
-    // Highlight canvas while hovering over it
-    const svgRect = svg.getBoundingClientRect();
-    const overCanvas = e.clientX >= svgRect.left && e.clientX <= svgRect.right &&
-                       e.clientY >= svgRect.top  && e.clientY <= svgRect.bottom;
-    svg.classList.toggle('palette-drop-target', overCanvas);
-  });
-
-  btn.addEventListener('pointerup', e => {
-    if (!_paletteDrag) return;
-    const { type, ghostEl } = _paletteDrag;
-    ghostEl.remove();
-    svg.classList.remove('palette-drop-target');
-    _paletteDrag = null;
-
-    const svgRect = svg.getBoundingClientRect();
-    const overCanvas = e.clientX >= svgRect.left && e.clientX <= svgRect.right &&
-                       e.clientY >= svgRect.top  && e.clientY <= svgRect.bottom;
-    if (!overCanvas) return;
-
-    const sp  = { x: e.clientX - svgRect.left, y: e.clientY - svgRect.top };
-    const wpt = camera.screenToWorld(sp.x, sp.y);
-    const sx  = snapWorldCoord(wpt.x, _snapEnabled);
-    const sy  = snapWorldCoord(wpt.y, _snapEnabled);
-
-    let body;
-    switch (type) {
-      case 'ball': body = createBall(sx, sy); break;
-      case 'point-mass': body = createPointMass(sx, sy); break;
-      case 'box':        body = createBox(sx, sy);       break;
-      case 'wedge':      body = createWedge(sx, sy);     break;
-    }
-    if (body) {
-      engine.addBody(body);
-      _currentSelection = { type: 'body', id: body.id };
-      renderer.select([body.id]);
-      props.show(_currentSelection);
-      _syncPropsPanel();
-    }
-  });
-
-  btn.addEventListener('pointercancel', () => {
-    if (!_paletteDrag) return;
-    _paletteDrag.ghostEl.remove();
-    svg.classList.remove('palette-drop-target');
-    _paletteDrag = null;
-  });
-});
-
 document.querySelector('[data-tool="select"]')?.classList.add('active');
-
 
 // ── Helpers ───────────────────────────────────────────────────────
 function _viewSize() {

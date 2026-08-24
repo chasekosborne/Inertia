@@ -44,22 +44,21 @@ const presetMenu    = document.getElementById('preset-menu');
 const presetMenuWrap = document.getElementById('preset-menu-wrap');
 const btnSceneLoad  = document.getElementById('btn-scene-load');
 const btnSceneSave  = document.getElementById('btn-scene-save');
-const btnSceneNew   = document.getElementById('btn-scene-new');
 const btnSceneReset = document.getElementById('btn-scene-reset');
 const btnSceneClear = document.getElementById('btn-scene-clear');
 const btnSettings   = document.getElementById('btn-settings');
 const settingsBackdrop = document.getElementById('settings-backdrop');
 const btnSettingsClose = document.getElementById('btn-settings-close');
 
-// Toolbar
-const btnGrid       = document.getElementById('btn-grid');
-const btnSnap       = document.getElementById('btn-snap');
-const btnOrigin     = document.getElementById('btn-origin');
-const btnVectors    = document.getElementById('btn-vectors');
-const btnTraces     = document.getElementById('btn-traces');
+// Settings — display toggles (grid, snap, origin, vectors, traces)
+const envGridToggle    = document.getElementById('env-grid-toggle');
+const envSnapToggle    = document.getElementById('env-snap-toggle');
+const envOriginToggle  = document.getElementById('env-origin-toggle');
+const envVectorsToggle = document.getElementById('env-vectors-toggle');
+const envTracesToggle  = document.getElementById('env-traces-toggle');
+
 const btnAddGraph   = document.getElementById('btn-add-graph');
 const canvasContainer = document.getElementById('canvas-container');
-
 // Canvas / status
 const svg           = document.getElementById('sandbox-svg');
 const cameraOverlaySvg = document.getElementById('camera-overlay');
@@ -67,14 +66,11 @@ const statusMode    = document.getElementById('status-mode');
 const statusBodies  = document.getElementById('status-bodies');
 const statusConstr  = document.getElementById('status-constraints');
 const propsContent  = document.getElementById('properties-content');
-const propsWrap     = document.getElementById('properties-wrap');
-const btnPropsToggle = document.getElementById('btn-props-toggle');
+const sidebarWrap   = document.getElementById('sidebar-wrap');
+const btnSidebarToggle = document.getElementById('btn-sidebar-toggle');
 const obContent     = document.getElementById('object-browser-content');
-const obWrap        = document.getElementById('object-browser-wrap');
-const btnObToggle   = document.getElementById('btn-ob-toggle');
 
-let _propsPinnedCollapsed = false;
-let _obPinnedCollapsed = false;
+let _sidebarCollapsed = true;
 
 // ── Core objects ─────────────────────────────────────────────────
 const engine   = new PhysicsEngine();
@@ -227,9 +223,9 @@ const exportControls = new ExportControls({
   applyCameraRig: () => _applyCameraRig(),
   getViewSize:    () => _viewSize(),
   getViewToggles: () => ({
-    grid:    btnGrid.classList.contains('active'),
-    vectors: btnVectors.classList.contains('active'),
-    traces:  btnTraces.classList.contains('active'),
+    grid:    !!envGridToggle?.checked,
+    vectors: !!envVectorsToggle?.checked,
+    traces:  !!envTracesToggle?.checked,
   }),
   getStatus: () => statusMode.innerHTML,
   setStatus: (html) => { statusMode.innerHTML = html; },
@@ -258,7 +254,6 @@ const labels = new LabelManager({
       props?.show(sel);
       objectBrowser?.setSelection(sel);
       objectBrowser?.scheduleRefresh();
-      _syncPropsPanel();
     }
   },
 });
@@ -278,7 +273,7 @@ const measurements = new MeasurementManager({
     renderer.select([]);
     props?.show(sel);
     objectBrowser?.setSelection(sel);
-    _syncPropsPanel();
+    objectBrowser?.scheduleRefresh();
   },
 });
 
@@ -319,30 +314,20 @@ _wrapEngineMethod('removeConstraint');
 
 
 
-function _isPropsCollapsed() {
-  return !_currentSelection || _propsPinnedCollapsed;
-}
-
-function _syncPropsPanel() {
-  const collapsed = _isPropsCollapsed();
-  propsWrap?.classList.toggle('collapsed', collapsed);
-  btnPropsToggle?.setAttribute('aria-expanded', String(!collapsed));
-  if (btnPropsToggle) {
-    btnPropsToggle.title = collapsed ? 'Expand properties' : 'Collapse properties';
-  }
-}
-
-function _syncObjectBrowserPanel() {
-  const collapsed = _obPinnedCollapsed;
-  obWrap?.classList.toggle('collapsed', collapsed);
-  btnObToggle?.setAttribute('aria-expanded', String(!collapsed));
-  if (btnObToggle) {
-    btnObToggle.title = collapsed ? 'Expand object browser' : 'Collapse object browser';
+function _syncSidebar() {
+  sidebarWrap?.classList.toggle('collapsed', _sidebarCollapsed);
+  btnSidebarToggle?.setAttribute('aria-expanded', String(!_sidebarCollapsed));
+  if (btnSidebarToggle) {
+    btnSidebarToggle.title = _sidebarCollapsed ? 'Open sidebar' : 'Close sidebar';
   }
 }
 
 function _onSandboxSelect(selection) {
   if (interaction.mode === 'camera') return;
+  if (selection) {
+    _sidebarCollapsed = false;
+    _syncSidebar();
+  }
   if (selection?.type === 'measurement') {
     labels.select(null);
     measurements.select(selection.id);
@@ -350,7 +335,6 @@ function _onSandboxSelect(selection) {
     renderer.select([]);
     props.show(selection);
     objectBrowser?.setSelection(selection);
-    _syncPropsPanel();
     return;
   }
   if (selection?.type === 'label') {
@@ -360,7 +344,6 @@ function _onSandboxSelect(selection) {
     renderer.select([]);
     props.show(selection);
     objectBrowser?.setSelection(selection);
-    _syncPropsPanel();
     return;
   }
   if (selection?.type === 'body') {
@@ -391,7 +374,6 @@ function _onSandboxSelect(selection) {
     editHandles.reset();
     scaleHandles.reset();
   }
-  _syncPropsPanel();
 }
 
 const props = new PropertiesPanel(propsContent, engine, _pushHistory, (idOrSel, partIndex = null) => {
@@ -407,7 +389,6 @@ const props = new PropertiesPanel(propsContent, engine, _pushHistory, (idOrSel, 
   _currentSelection = { type: 'body', id: idOrSel, partIndex };
   renderer.select([idOrSel], { partIndex });
   objectBrowser?.setSelection(_currentSelection);
-  _syncPropsPanel();
 }, () => _snapEnabled, {
   getManager: () => measurements,
   getLabelManager: () => labels,
@@ -430,7 +411,7 @@ const objectBrowser = new ObjectBrowser(obContent, engine, {
   onAggregateChange: () => objectBrowser.scheduleRefresh(),
 });
 objectBrowser.refresh();
-_syncObjectBrowserPanel();
+_syncSidebar();
 
 /** Keep selection and graphs following sticky groups after a weld. */
 engine.onWeld((compound, removedIds) => {
@@ -452,18 +433,9 @@ engine.onWeld((compound, removedIds) => {
   });
 });
 
-btnPropsToggle?.addEventListener('click', () => {
-  if (_isPropsCollapsed()) {
-    _propsPinnedCollapsed = false;
-  } else {
-    _propsPinnedCollapsed = true;
-  }
-  _syncPropsPanel();
-});
-
-btnObToggle?.addEventListener('click', () => {
-  _obPinnedCollapsed = !_obPinnedCollapsed;
-  _syncObjectBrowserPanel();
+btnSidebarToggle?.addEventListener('click', () => {
+  _sidebarCollapsed = !_sidebarCollapsed;
+  _syncSidebar();
 });
 
 renderer.onSelect(_onSandboxSelect);
@@ -522,7 +494,7 @@ engine.onStep(simTime => {
   if (recorder.isRecording) {
     recorder.capture(simTime, engine.bodies, engine.constraints);
     // Trail length only advances with recorded frames (not every RAF tick).
-    if (btnTraces.classList.contains('active')) {
+    if (envTracesToggle?.checked) {
       renderer.sampleTraces(engine.bodies);
     }
     timeline.setRecordedFrames(recorder.frameCount);
@@ -533,7 +505,7 @@ engine.onStep(simTime => {
 
 /** Rebuild trajectory trails from footage up to the given review frame. */
 function _syncReviewTraces(frameIdx = playback.frameIndex) {
-  if (!btnTraces.classList.contains('active')) return;
+  if (!envTracesToggle?.checked) return;
   renderer.setTracesFromFrames(recorder.frames, frameIdx);
 }
 
@@ -673,7 +645,6 @@ function _applyHistorySnapshot(snapshot) {
     objectBrowser?.setSelection({ type: 'measurement', id: selMeasure });
     props.show({ type: 'measurement', id: selMeasure });
     objectBrowser?.scheduleRefresh();
-    _syncPropsPanel();
     return;
   }
   if (selLabelId && labels.getById(selLabelId)) {
@@ -681,7 +652,6 @@ function _applyHistorySnapshot(snapshot) {
     objectBrowser?.setSelection({ type: 'label', id: selLabelId });
     props.show({ type: 'label', id: selLabelId });
     objectBrowser?.scheduleRefresh();
-    _syncPropsPanel();
     return;
   }
   if (selLabel) {
@@ -692,14 +662,12 @@ function _applyHistorySnapshot(snapshot) {
       props.show(_currentSelection);
       objectBrowser?.setSelection(_currentSelection);
       objectBrowser?.scheduleRefresh();
-      _syncPropsPanel();
       return;
     }
   }
   props.show(null);
   objectBrowser?.setSelection(null);
   objectBrowser?.scheduleRefresh();
-  _syncPropsPanel();
 }
 
 function _toggleCaptureSession() {
@@ -716,7 +684,7 @@ function _toggleCaptureSession() {
     recorder.start();          // resumes / continues: does NOT clear frames
     if (recorder.frameCount === 0) {
       recorder.capture(engine.simTime, engine.bodies, engine.constraints);
-      if (btnTraces.classList.contains('active')) {
+      if (envTracesToggle?.checked) {
         renderer.sampleTraces(engine.bodies);
       }
     }
@@ -759,30 +727,8 @@ function _clearRecording() {
   _syncGraphs(true);
 }
 
-// ── View toggles ──────────────────────────────────────────────────
-btnGrid.addEventListener('click', () => {
-  renderer.setShowGrid(btnGrid.classList.toggle('active'));
-});
-btnSnap.addEventListener('click', () => {
-  _snapEnabled = btnSnap.classList.toggle('active');
-  interaction.setSnapEnabled(_snapEnabled);
-});
-btnOrigin?.addEventListener('click', () => {
-  const on = btnOrigin.classList.toggle('active');
-  btnOrigin.setAttribute('aria-pressed', String(on));
-  renderer.setShowMetricOrigin(on);
-  interaction.setMetricOriginSelectable(on);
-  // Drop selection if the hidden origin was selected
-  if (!on && _currentSelection?.type === 'body') {
-    const b = engine.bodies.find(x => x.id === _currentSelection.id);
-    if (b?._newtonType === 'metric-basis') _onSandboxSelect(null);
-  }
-});
-btnVectors.addEventListener('click', () => {
-  renderer.setShowVectors(btnVectors.classList.toggle('active'));
-});
-btnTraces.addEventListener('click', () => {
-  const on = btnTraces.classList.toggle('active');
+// ── View toggles (settings panel) ─────────────────────────────────
+function _applyTracesToggle(on) {
   renderer.setShowTraces(on);
   if (!on) {
     renderer.clearTraces();
@@ -796,10 +742,43 @@ btnTraces.addEventListener('click', () => {
   } else {
     renderer.clearTraces();
   }
-});
+}
+
+function _applyOriginToggle(on) {
+  renderer.setShowMetricOrigin(on);
+  interaction.setMetricOriginSelectable(on);
+  if (!on && _currentSelection?.type === 'body') {
+    const b = engine.bodies.find(x => x.id === _currentSelection.id);
+    if (b?._newtonType === 'metric-basis') _onSandboxSelect(null);
+  }
+}
 
 // ── Interaction / selection ───────────────────────────────────────
 const interaction = new InteractionHandler(svg, engine, _onSandboxSelect, camera, renderer.interactionGhostLayer);
+
+_snapEnabled = !!envSnapToggle?.checked;
+interaction.setSnapEnabled(_snapEnabled);
+renderer.setShowGrid(!!envGridToggle?.checked);
+renderer.setShowVectors(!!envVectorsToggle?.checked);
+_applyTracesToggle(!!envTracesToggle?.checked);
+_applyOriginToggle(!!envOriginToggle?.checked);
+
+envGridToggle?.addEventListener('change', () => {
+  renderer.setShowGrid(!!envGridToggle.checked);
+});
+envSnapToggle?.addEventListener('change', () => {
+  _snapEnabled = !!envSnapToggle.checked;
+  interaction.setSnapEnabled(_snapEnabled);
+});
+envOriginToggle?.addEventListener('change', () => {
+  _applyOriginToggle(!!envOriginToggle.checked);
+});
+envVectorsToggle?.addEventListener('change', () => {
+  renderer.setShowVectors(!!envVectorsToggle.checked);
+});
+envTracesToggle?.addEventListener('change', () => {
+  _applyTracesToggle(!!envTracesToggle.checked);
+});
 
 const editorContext = createEditorContext({
   engine, camera, svg, renderer,
@@ -974,7 +953,6 @@ function _clearSelectionAfterLoad() {
   props.clear();
   objectBrowser.setSelection(null);
   objectBrowser.refresh();
-  _syncPropsPanel();
 }
 
 /**
@@ -1072,11 +1050,6 @@ btnPresetMenu?.addEventListener('click', e => {
   _togglePresetMenu();
 });
 
-btnSceneNew?.addEventListener('click', () => {
-  _closePresetMenu();
-  _loadBlankScene();
-});
-
 btnSceneLoad?.addEventListener('click', () => {
   _closePresetMenu();
   sceneSession.importFromFile();
@@ -1092,6 +1065,7 @@ btnSceneReset?.addEventListener('click', () => {
 });
 
 btnSceneClear?.addEventListener('click', () => {
+  _closePresetMenu();
   _clearEntireScene();
 });
 
@@ -1149,7 +1123,7 @@ document.querySelectorAll('.obj-btn-ground').forEach(btn => {
   btn.addEventListener('click', () => _activateTool('ground', 'Ground'));
 });
 
-// Object / constraint tools: click to change mode (anchor = click-place, rod|spring = drag between bodies)
+// Object / constraint tools: click to change mode (rod|spring|rope = drag between bodies)
 document.querySelectorAll('.obj-mode-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tool = btn.dataset.tool;
@@ -1183,6 +1157,7 @@ function _frameMetricBasis(scale = DEFAULT_CAMERA_SCALE) {
   const origin = getMetricOriginWorldPx();
   if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) return;
   camera.centerOnWorld(origin.x, origin.y, vw, vh, scale);
+  cameraRig.syncFromCamera(camera, vw, vh);
   renderer.syncMetricOrigin();
 }
 

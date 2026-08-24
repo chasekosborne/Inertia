@@ -11,7 +11,7 @@
  *   scale          : drag handles to resize box (width/height) or circle (radius)
  *   point-mass     : drag-to-place legacy (prefer add-bar drag-drop in main.js)
  *   box             :
- *   anchor         : click to place
+ *   anchor         : drag from palette; rotate tool spins the triangle about the pivot
  *   ground         : pointer down sets start (anywhere on canvas), drag shows a
  *                     segment preview like a constraint, release to place, Ctrl = 5° steps
  *   rope           : click-drag to place, drop on a body to attach that end
@@ -24,7 +24,7 @@
 import Matter from 'matter-js';
 import { createPointMass, createBall, createBox, createWedge, createAnchor, createGround,
          createString, wedgeAABBCenterWorld, setWedgeAABBCenter, snapWedgeToGrid,
-         wedgeContainsWorldPoint } from '../physics/bodies.js';
+         wedgeContainsWorldPoint, anchorContainsWorldPoint } from '../physics/bodies.js';
 import { createRod, createSpring } from '../physics/constraints.js';
 import {
   createFreeRope, ropeSegmentCountForLength, ropeSelection, listRopeSegments, clampRopeSegments,
@@ -272,21 +272,15 @@ export class InteractionHandler {
 
   /** True if `pt` is inside body geometry (anchors use a bespoke hit-zone). */
   _bodyHitsPoint(b, pt) {
-    // Wedge: use AABB triangle test: Matter parts/bounds can desync after rescale.
+    // Wedge / anchor: Matter bounds are smaller than the drawn shape.
     if (b._newtonType === 'wedge') {
       return wedgeContainsWorldPoint(b, pt.x, pt.y);
     }
+    if (b._newtonType === 'anchor') {
+      return anchorContainsWorldPoint(b, pt.x, pt.y);
+    }
 
     if (!Bounds.contains(b.bounds, pt)) return false;
-
-    // Anchor: pivot at body.position (matches rendered hinge circle).
-    if (b._newtonType === 'anchor') {
-      const px = b.position.x;
-      const py = b.position.y;
-      const dx = px - pt.x;
-      const dy = py - pt.y;
-      return dx * dx + dy * dy <= 18 * 18;
-    }
 
     const startIdx = b.parts.length === 1 ? 0 : 1;
     for (let j = startIdx; j < b.parts.length; j++) {
@@ -849,7 +843,7 @@ export class InteractionHandler {
       if (hover) {
         this._ghostLayer.appendChild(svgEl('circle', {
           cx: bx, cy: by, r: 5,
-          fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+          fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
         }));
       }
 
@@ -1180,7 +1174,7 @@ export class InteractionHandler {
   _canRotate(body) {
     if (body?._ropeSegment) return false;
     const t = body?._newtonType;
-    return t === 'box' || t === 'ground' || t === 'ball' || t === 'point-mass' || t === 'wedge';
+    return t === 'box' || t === 'ground' || t === 'ball' || t === 'point-mass' || t === 'wedge' || t === 'anchor';
   }
 
   /** Bodies resized by the scale tool. */
@@ -1221,7 +1215,7 @@ export class InteractionHandler {
     }));
     this._ghostLayer.appendChild(svgEl('circle', {
       cx: ax, cy: ay, r: 3.5,
-      fill: '#2980b9',
+      fill: '#2d70b3',
       stroke: '#fff',
       'stroke-width': 1,
     }));
@@ -1357,13 +1351,13 @@ export class InteractionHandler {
     if (this._ropeStart?.attach) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ax, cy: ay, r: 5,
-        fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+        fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
       }));
     }
     if (endAttach) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ex, cy: ey, r: 5,
-        fill: '#2980b9', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
+        fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
       }));
     }
     const txt = svgEl('text', {

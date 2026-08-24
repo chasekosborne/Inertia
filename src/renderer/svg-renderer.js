@@ -54,8 +54,8 @@ const STYLE = {
   springWidth:   1.05,
   springCoils:   8,
   springAmpl:    7.5,
-  gridColor:     '#e8e6e0',
-  gridColorMajor:'#d0cec8',
+  gridColor:     '#ebebeb',
+  gridColorMajor:'#d4d4d4',
   gridMinor:     10,   // 0.1 m at 100 px/m
   gridMajor:     100,  // 1 m at 100 px/m
   traceColor:    COLORS.ink,
@@ -620,9 +620,7 @@ export class SvgRenderer {
         class: 'body-shape wedge-body wedge-ring',
       }));
     } else if (type === 'anchor') {
-      // Triangle with pivot circle at the apex (body.position)
-      g.removeAttribute('transform'); // anchor uses absolute coords
-      this._drawAnchor(g, x, y);
+      this._drawAnchor(g);
       return;
     } else if (type === 'ground') {
       const w = body._width  ?? 400;
@@ -649,18 +647,19 @@ export class SvgRenderer {
     }
   }
 
-  _drawAnchor(g, x, y) {
+  _drawAnchor(g) {
+    const r = 4;
     const size = 14;
     const triH = size * 1.4;
-    // Upward triangle, hinge at bottom apex = physics pivot (x, y).
+    // Inverted triangle above pivot circle; hinge at local origin (body centre).
     g.appendChild(el('polygon', {
-      points: `${x},${y} ${x - size},${y - triH} ${x + size},${y - triH}`,
-      fill: 'none', stroke: STYLE.ink, 'stroke-width': 2,
+      points: `0,${-r} ${-size},${-r - triH} ${size},${-r - triH}`,
+      fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': 2,
       class: 'body-shape',
     }));
     g.appendChild(el('circle', {
-      cx: x, cy: y, r: 4,
-      fill: '#fff', stroke: STYLE.ink, 'stroke-width': 2,
+      cx: 0, cy: 0, r,
+      fill: '#fff', stroke: STYLE.anchorStroke, 'stroke-width': 2,
     }));
   }
 

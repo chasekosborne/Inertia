@@ -116,7 +116,7 @@ export class CameraOverlay {
       x: cx - badgeW / 2, y: badgeY - badgeH / 2,
       width: badgeW, height: badgeH,
       rx: 3, ry: 3,
-      fill: resizing ? 'rgba(166, 61, 47, 0.92)' : 'rgba(255, 254, 251, 0.94)',
+      fill: resizing ? 'rgba(166, 61, 47, 0.92)' : 'rgba(255, 255, 255, 0.94)',
       stroke: FRAME_STROKE,
       'stroke-width': 1.25,
       'pointer-events': 'none',
@@ -124,7 +124,7 @@ export class CameraOverlay {
     const aspectText = el('text', {
       x: cx, y: badgeY + (resizing ? 5 : 4),
       'text-anchor': 'middle',
-      fill: resizing ? '#fffefb' : FRAME_STROKE,
+      fill: resizing ? '#ffffff' : FRAME_STROKE,
       'font-size': resizing ? '13' : '11',
       'font-weight': resizing ? '600' : '500',
       'font-family': 'DM Sans, system-ui, sans-serif',
@@ -148,7 +148,7 @@ export class CameraOverlay {
       this._g.appendChild(el('rect', {
         x: hx - HANDLE / 2, y: hy - HANDLE / 2,
         width: HANDLE, height: HANDLE,
-        fill: '#fffefb',
+        fill: '#ffffff',
         stroke: FRAME_STROKE,
         'stroke-width': 1.5,
         'data-cam-handle': mode,
@@ -160,7 +160,7 @@ export class CameraOverlay {
     const origin = el('g', { 'data-cam-handle': 'origin', style: 'cursor:move' });
     origin.appendChild(el('circle', {
       cx, cy, r: ORIGIN_R,
-      fill: '#fffefb',
+      fill: '#ffffff',
       stroke: FRAME_STROKE,
       'stroke-width': 2,
     }));

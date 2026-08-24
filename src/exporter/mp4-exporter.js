@@ -10,7 +10,7 @@ import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { COLORS, FONT_DIAGRAM } from '../theme.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-/** Export video frames use pure white (live canvas paper stays off-white). */
+/** Export video frames use pure white (matches live canvas paper). */
 const BG = '#ffffff';
 
 /** Paint props copied from the live tree so blob rasterization matches the canvas. */

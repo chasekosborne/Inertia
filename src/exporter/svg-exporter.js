@@ -70,7 +70,7 @@ export function exportAnimatedSVG(frames, opts = {}) {
     width, height,
     viewBox: `0 0 ${width} ${height}`,
     'font-family': FONT_DIAGRAM,
-    style: 'background:#fffefb',
+    style: 'background:#ffffff',
   });
 
   // ── Defs ──────────────────────────────────────────────────────
@@ -100,13 +100,13 @@ export function exportAnimatedSVG(frames, opts = {}) {
     for (let x = 0; x <= width; x += 20) {
       gridG.appendChild(el('line', {
         x1: x, y1: 0, x2: x, y2: height,
-        stroke: '#e8e6e0', 'stroke-width': x % 100 === 0 ? 1 : 0.4,
+        stroke: '#ebebeb', 'stroke-width': x % 100 === 0 ? 1 : 0.4,
       }));
     }
     for (let y = 0; y <= height; y += 20) {
       gridG.appendChild(el('line', {
         x1: 0, y1: y, x2: width, y2: y,
-        stroke: '#e8e6e0', 'stroke-width': y % 100 === 0 ? 1 : 0.4,
+        stroke: '#ebebeb', 'stroke-width': y % 100 === 0 ? 1 : 0.4,
       }));
     }
     svg.appendChild(gridG);
@@ -387,7 +387,7 @@ export function exportAnimatedSVG(frames, opts = {}) {
       id: 'exp-arrow-v', markerWidth: '6', markerHeight: '6',
       refX: '5', refY: '3', orient: 'auto',
     });
-    mkV.appendChild(el('path', { d: 'M0,0 L0,6 L6,3 z', fill: '#2980b9' }));
+    mkV.appendChild(el('path', { d: 'M0,0 L0,6 L6,3 z', fill: '#2d70b3' }));
     defs.appendChild(mkV);
 
     const vecLayer = el('g', { id: 'vectors' });
@@ -417,7 +417,7 @@ export function exportAnimatedSVG(frames, opts = {}) {
       // Velocity arrow
       const vG    = el('g', { id: `vec-v-${bId}` });
       const vLine = el('line', {
-        stroke: '#2980b9', 'stroke-width': 1, 'stroke-linecap': 'round',
+        stroke: '#2d70b3', 'stroke-width': 1, 'stroke-linecap': 'round',
         'marker-end': 'url(#exp-arrow-v)',
       });
       const vPx  = getVelocityPxPerMs();

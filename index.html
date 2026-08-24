@@ -27,21 +27,6 @@
               <svg id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
               <svg id="icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
             </button>
-            <button id="btn-scene-reset" type="button" class="icon-only" disabled title="Reset to last saved setup" aria-label="Reset scene">
-              <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-            </button>
-            <button id="btn-scene-clear" type="button" class="icon-only danger" title="Clear entire scene" aria-label="Clear entire scene">
-              <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-            </button>
-          </div>
-
-          <div class="divider"></div>
-
-          <!-- Speed control (while capturing) -->
-          <div class="control-group" id="speed-group">
-            <label for="speed-slider">Speed</label>
-            <input type="range" id="speed-slider" min="0.1" max="4" step="0.1" value="1" />
-            <span id="speed-label">1×</span>
           </div>
 
           <div class="divider"></div>
@@ -52,11 +37,20 @@
               <svg class="menu-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg>
             </button>
             <div id="preset-menu" class="menu-dropdown hidden" role="menu">
-              <button type="button" id="btn-scene-new" class="menu-item" role="menuitem">New blank scene</button>
+              <button type="button" id="btn-scene-reset" class="menu-item" role="menuitem" disabled>Reset to last saved setup</button>
+              <button type="button" id="btn-scene-clear" class="menu-item menu-item-danger" role="menuitem">Clear entire scene</button>
               <div class="menu-divider" role="separator"></div>
               <button type="button" id="btn-scene-load" class="menu-item" role="menuitem">Load from file…</button>
               <button type="button" id="btn-scene-save" class="menu-item" role="menuitem">Export JSON…</button>
               <button type="button" id="btn-export-mp4" class="menu-item" role="menuitem" title="Export recorded frames as MP4 or WebM video" disabled>Export Video…</button>
+              <div class="menu-divider" role="separator"></div>
+              <div class="menu-speed" role="presentation">
+                <label class="menu-speed-label" for="speed-slider">Playback speed</label>
+                <div class="menu-speed-row">
+                  <input type="range" id="speed-slider" min="0.1" max="4" step="0.1" value="1" aria-label="Playback speed"/>
+                  <span id="speed-label" class="menu-speed-value">1×</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -73,38 +67,8 @@
 
         <div id="toolbar-right">
           <div class="control-group">
-            <button id="btn-settings" type="button" class="icon-only" title="Environment settings" aria-label="Environment settings">
+            <button id="btn-settings" type="button" class="icon-only" title="Settings" aria-label="Settings">
               <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-            </button>
-          </div>
-
-          <div class="divider"></div>
-
-          <!-- View controls -->
-          <div class="control-group">
-            <button id="btn-grid" title="Toggle grid" class="active">
-              <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM8 20H4v-4h4v4zm0-6H4v-4h4v4zm0-6H4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4z"/></svg>
-            </button>
-            <button id="btn-snap" title="Snap to grid" class="active">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M4 8h16M4 16h16M8 4v16M16 4v16" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
-                <circle cx="8" cy="8" r="2.8" fill="currentColor"/>
-              </svg>
-            </button>
-            <button id="btn-origin" title="Toggle metric origin" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M3 12h18M12 3v18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
-              </svg>
-            </button>
-            <button id="btn-vectors" title="Toggle force and velocity vectors" class="active">
-              <svg viewBox="0 0 24 24"><path d="M21 6.5l-4-4-1.41 1.41L17.67 6H3v2h14.67l-2.08 2.09L17 11.5l4-4-.41-.41.41-.59z"/></svg>
-            </button>
-            <button id="btn-traces" title="Toggle trajectory traces">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 18c2.5-1 4-4 6-7s3.5-5 6-5 3 2 4 4" stroke-dasharray="2.5 2.5"/>
-                <circle cx="19" cy="11" r="2" fill="currentColor" stroke="none"/>
-              </svg>
             </button>
           </div>
         </div>
@@ -146,17 +110,7 @@
           </button>
         </aside>
 
-        <!-- Object browser (left of canvas) -->
-        <div id="object-browser-wrap">
-          <aside id="object-browser-panel">
-            <h3>Objects</h3>
-            <div id="object-browser-content"></div>
-          </aside>
-          <button type="button" id="btn-ob-toggle" class="ob-toggle" aria-controls="object-browser-panel" aria-expanded="true" title="Collapse object browser">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-
+        <div id="workspace">
         <!-- Canvas area -->
         <main id="canvas-container">
           <svg id="sandbox-svg" xmlns="http://www.w3.org/2000/svg">
@@ -173,23 +127,76 @@
             <!-- +x axis (rightward) -->
             <line x1="12" y1="44" x2="44" y2="44" stroke="#555" stroke-width="1.5"/>
             <polygon points="44,44 38,41 38,47" fill="#555"/>
-            <text x="47" y="47" font-size="10" font-family="KaTeX_Main, 'Times New Roman', serif" font-style="italic" fill="#5c6370">x</text>
+            <text x="47" y="47" font-size="10" font-family="KaTeX_Main, 'Times New Roman', serif" font-style="italic" fill="#666666">x</text>
             <!-- +y axis (upward — flipped from SVG convention to match physics notation) -->
             <line x1="12" y1="44" x2="12" y2="12" stroke="#555" stroke-width="1.5"/>
             <polygon points="12,12 9,18 15,18" fill="#555"/>
-            <text x="14" y="11" font-size="10" font-family="KaTeX_Main, 'Times New Roman', serif" font-style="italic" fill="#5c6370">y</text>
+            <text x="14" y="11" font-size="10" font-family="KaTeX_Main, 'Times New Roman', serif" font-style="italic" fill="#666666">y</text>
           </svg>
         </main>
 
+        <!-- Timeline / playback bar (slides up when footage exists) -->
+        <div id="timeline-bar" class="collapsed" aria-hidden="true">
+
+          <!-- Mode badge -->
+          <span id="tl-mode-badge" class="tl-badge tl-setup">SETUP</span>
+
+          <!-- Transport controls -->
+          <div id="tl-transport">
+            <button id="tl-jump-start" title="Jump to initial conditions (I)">
+              <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
+            <button id="tl-rev-fast" title="Reverse 2×">
+              <svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6 8.5 6V6l-8.5 6z"/></svg>
+            </button>
+            <button id="tl-rev-step" title="Step back one frame (←)">
+              <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" transform="scale(-1,1) translate(-24,0)"/></svg>
+            </button>
+            <button id="tl-play-review" class="tl-play-btn" title="Play / Pause review (R)">
+              <svg id="tl-icon-play"  viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="tl-icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              <svg id="tl-icon-rev"   viewBox="0 0 24 24" style="display:none"><path d="M16 5v14L7 12z"/></svg>
+            </button>
+            <button id="tl-fwd-step" title="Step forward one frame (→)">
+              <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14 4.97 2.14L8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+            </button>
+            <button id="tl-fwd-fast" title="Forward 2×">
+              <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+            </button>
+            <button id="tl-jump-end" title="Jump to last recorded frame">
+              <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            </button>
+            <button id="tl-clear-frames" class="tl-clear-btn" title="Clear all recorded frames" disabled>
+              <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+          </div>
+
+          <!-- Scrubber -->
+          <div id="tl-scrubber-wrap">
+            <div id="tl-ic-marker" title="Initial conditions (frame 0)">IC</div>
+            <div id="tl-track">
+              <div id="tl-fill"></div>
+              <input type="range" id="tl-scrubber" min="0" max="0" value="0" step="1" />
+            </div>
+          </div>
+
+          <!-- Frame / time info -->
+          <div id="tl-info">
+            <span id="tl-frame-count">0 fr</span>
+            <span id="tl-time-display">0.000 s</span>
+          </div>
+
+        </div>
+        </div>
+
         <!-- Object toolbar (right of canvas) -->
         <nav id="object-bar">
-          <span class="obj-bar-label">Objects</span>
-          <button class="obj-btn" data-tool="ball" data-drag-place="true" title="Ball">
-            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <button class="obj-btn" data-tool="point-mass" data-drag-place="true" title="Circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="5"/>
             </svg>
           </button>
-          <button class="obj-btn" data-tool="point-mass" data-drag-place="true" title="Point">
+          <button class="obj-btn" data-tool="ball" data-drag-place="true" title="Point">
             <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
               <circle cx="12" cy="12" r="3.5"/>
             </svg>
@@ -215,15 +222,13 @@
               <line x1="3" y1="9" x2="21" y2="9" stroke-width="2" stroke-linecap="round"/>
             </svg>
           </button>
-          <button class="obj-btn obj-mode-btn" type="button" data-tool="anchor" title="Pivot">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
-              <path d="M6 8h12"/>
-              <path d="M12 8v3"/>
-              <polygon points="12,13 17,20 7,20" fill="none"/>
+          <button class="obj-btn" data-tool="anchor" data-drag-place="true" title="Pivot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="miter">
+              <polygon points="12,15 5,7 19,7"/>
+              <circle cx="12" cy="18" r="3"/>
             </svg>
           </button>
 
-          <span class="obj-bar-label obj-bar-label-section">Constraints</span>
           <button class="obj-btn obj-mode-btn" type="button" data-tool="rod" title="Rod">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <circle cx="8" cy="12" r="2.5" fill="none"/>
@@ -246,7 +251,6 @@
             </svg>
           </button>
 
-          <span class="obj-bar-label obj-bar-label-section">Measure</span>
           <button class="obj-btn obj-mode-btn" type="button" data-tool="measure-angle" title="Angle">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 18 L20 18"/>
@@ -262,79 +266,29 @@
             </svg>
           </button>
 
-          <span class="obj-bar-label obj-bar-label-section">Labels</span>
           <button class="obj-btn obj-mode-btn" type="button" data-tool="label" title="Label — click target point, then text position. Dotted leader to the point.">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <text x="12" y="17" text-anchor="middle" font-size="11" font-family="serif" font-style="italic" fill="currentColor" stroke="none">x</text>
-              <path d="M12 13 L12 5"/>
-              <circle cx="12" cy="4" r="1.5" fill="currentColor" stroke="none"/>
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <text x="12" y="13" text-anchor="middle" dominant-baseline="central" font-size="17" font-family="'Source Serif 4', Georgia, 'Times New Roman', serif" fill="currentColor">T</text>
             </svg>
           </button>
         </nav>
 
-        <!-- Properties panel (right sidebar) -->
-        <div id="properties-wrap" class="collapsed">
-          <button type="button" id="btn-props-toggle" class="props-toggle" aria-controls="properties-panel" aria-expanded="false" title="Expand properties">
+        <!-- Combined sidebar: objects + properties -->
+        <div id="sidebar-wrap" class="collapsed">
+          <button type="button" id="btn-sidebar-toggle" class="sidebar-toggle" aria-controls="sidebar-panel" aria-expanded="false" title="Open sidebar">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
-          <aside id="properties-panel">
-            <h3>Properties</h3>
-            <div id="properties-content"></div>
+          <aside id="sidebar-panel">
+            <section id="object-browser-panel" class="sidebar-section">
+              <h3>Objects</h3>
+              <div id="object-browser-content"></div>
+            </section>
+            <section id="properties-panel" class="sidebar-section sidebar-section-properties">
+              <h3>Properties</h3>
+              <div id="properties-content"></div>
+            </section>
           </aside>
         </div>
-      </div>
-
-      <!-- Timeline / playback bar -->
-      <div id="timeline-bar">
-
-        <!-- Mode badge -->
-        <span id="tl-mode-badge" class="tl-badge tl-setup">SETUP</span>
-
-        <!-- Transport controls -->
-        <div id="tl-transport">
-          <button id="tl-jump-start" title="Jump to initial conditions (I)">
-            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
-          </button>
-          <button id="tl-rev-fast" title="Reverse 2×">
-            <svg viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6 8.5 6V6l-8.5 6z"/></svg>
-          </button>
-          <button id="tl-rev-step" title="Step back one frame (←)">
-            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" transform="scale(-1,1) translate(-24,0)"/></svg>
-          </button>
-          <button id="tl-play-review" class="tl-play-btn" title="Play / Pause review (R)">
-            <svg id="tl-icon-play"  viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            <svg id="tl-icon-pause" viewBox="0 0 24 24" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-            <svg id="tl-icon-rev"   viewBox="0 0 24 24" style="display:none"><path d="M16 5v14L7 12z"/></svg>
-          </button>
-          <button id="tl-fwd-step" title="Step forward one frame (→)">
-            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14 4.97 2.14L8 14.14V9.86zM16 6h2v12h-2z"/></svg>
-          </button>
-          <button id="tl-fwd-fast" title="Forward 2×">
-            <svg viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
-          </button>
-          <button id="tl-jump-end" title="Jump to last recorded frame">
-            <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-          </button>
-          <button id="tl-clear-frames" class="tl-clear-btn" title="Clear all recorded frames" disabled>
-            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-          </button>
-        </div>
-
-        <!-- Scrubber -->
-        <div id="tl-scrubber-wrap">
-          <div id="tl-ic-marker" title="Initial conditions (frame 0)">IC</div>
-          <div id="tl-track">
-            <div id="tl-fill"></div>
-            <input type="range" id="tl-scrubber" min="0" max="0" value="0" step="1" />
-          </div>
-        </div>
-
-        <!-- Frame / time info -->
-        <div id="tl-info">
-          <span id="tl-frame-count">0 fr</span>
-          <span id="tl-time-display">0.000 s</span>
-        </div>
-
       </div>
 
       <!-- Status bar -->
@@ -349,7 +303,7 @@
       <div id="settings-backdrop" class="modal-backdrop hidden" aria-hidden="true">
         <div id="settings-dialog" class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <header class="modal-header">
-            <h2 id="settings-title">Environment</h2>
+            <h2 id="settings-title">Settings</h2>
             <button type="button" id="btn-settings-close" class="modal-close" aria-label="Close settings">×</button>
           </header>
           <div class="modal-body" id="env-section">
@@ -386,6 +340,41 @@
             </div>
 
             <div class="prop-section-title" style="margin-top:14px">Display</div>
+            <div class="prop-row">
+              <span class="prop-label">Show grid</span>
+              <label class="toggle-label">
+                <input type="checkbox" id="env-grid-toggle" checked/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">Snap to grid</span>
+              <label class="toggle-label">
+                <input type="checkbox" id="env-snap-toggle" checked/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">Metric origin</span>
+              <label class="toggle-label">
+                <input type="checkbox" id="env-origin-toggle"/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">Force &amp; velocity vectors</span>
+              <label class="toggle-label">
+                <input type="checkbox" id="env-vectors-toggle" checked/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">Trajectory traces</span>
+              <label class="toggle-label">
+                <input type="checkbox" id="env-traces-toggle"/>
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
             <div class="prop-row prop-row-slider">
               <span class="prop-label">Force arrows</span>
               <div class="prop-slider-wrap">
@@ -443,7 +432,7 @@
                   <span class="prop-label">Filename</span>
                   <input class="prop-value" id="video-export-filename" type="text" value="inertia-recording" spellcheck="false"/>
                 </div>
-                <p class="export-hint">Grid, vectors, and traces follow the toolbar toggles. Export uses the <strong>camera frame</strong> at the chosen preset and includes every recorded frame from start to end (<strong id="video-export-frame-count">0</strong>).</p>
+                <p class="export-hint">Grid, vectors, and traces follow the settings toggles. Export uses the <strong>camera frame</strong> at the chosen preset and includes every recorded frame from start to end (<strong id="video-export-frame-count">0</strong>).</p>
               </div>
             </div>
             <div class="export-section">

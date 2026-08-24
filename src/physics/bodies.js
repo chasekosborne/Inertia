@@ -796,8 +796,8 @@ export function createWedge(x, y, opts = {}) {
 }
 
 /**
- * Create a static pivot anchor: triangle with pivot circle at the apex
- * (body.position = constraint attachment).
+ * Create a static pivot anchor: inverted triangle on a pivot circle
+ * (body.position = circle centre = constraint attachment).
  */
 export function createAnchor(x, y) {
   const body = Bodies.circle(x, y, 6, {
@@ -807,6 +807,37 @@ export function createAnchor(x, y) {
   });
   body._newtonType = 'anchor';
   return body;
+}
+
+/** Visual pivot geometry (matches svg-renderer `_drawAnchor`). */
+export const ANCHOR_PIVOT_R = 4;
+export const ANCHOR_TRI_SIZE = 14;
+export const ANCHOR_TRI_HEIGHT = ANCHOR_TRI_SIZE * 1.4;
+export const ANCHOR_HIT_R = 18;
+
+function _pointInTri(px, py, x0, y0, x1, y1, x2, y2) {
+  const d1 = (px - x1) * (y0 - y1) - (x0 - x1) * (py - y1);
+  const d2 = (px - x2) * (y1 - y2) - (x1 - x2) * (py - y2);
+  const d3 = (px - x0) * (y2 - y0) - (x2 - x0) * (py - y0);
+  const hasNeg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+  const hasPos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+  return !(hasNeg && hasPos);
+}
+
+/** Hit-test the drawn pivot (circle + triangle), not just the Matter circle bounds. */
+export function anchorContainsWorldPoint(body, wx, wy) {
+  if (body?._newtonType !== 'anchor') return false;
+  const dx = wx - body.position.x;
+  const dy = wy - body.position.y;
+  const c = Math.cos(-body.angle);
+  const s = Math.sin(-body.angle);
+  const lx = dx * c - dy * s;
+  const ly = dx * s + dy * c;
+  if (lx * lx + ly * ly <= ANCHOR_HIT_R * ANCHOR_HIT_R) return true;
+  const r = ANCHOR_PIVOT_R;
+  const size = ANCHOR_TRI_SIZE;
+  const triH = ANCHOR_TRI_HEIGHT;
+  return _pointInTri(lx, ly, 0, -r, -size, -r - triH, size, -r - triH);
 }
 
 /**

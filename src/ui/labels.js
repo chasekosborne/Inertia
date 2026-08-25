@@ -1,23 +1,31 @@
 /**
- * Text labels: inline on bodies or callouts with a dotted leader to a point.
+ * Text labels: inline on bodies, or callouts with a dotted leader to a target.
  *
  * Scene JSON:
  *   Inline:  { "text": "m", "body": "mass", "offset": { "x": 0, "y": 0 } }
- *   Callout: { "text": "x_0", "point": { "x": 0, "y": -0.1 }, "offset": { "x": 0, "y": -0.3 } }
- *    : text sits at point + offset (display metres, +y up), dotted line to point.
- *   Standalone: { "text": "A", "position": { "x": 0, "y": 0 }, "offset": { ... } }
- *    : like a callout anchored at `position`, offset draws a leader to that point.
+ *     — text rides on the body (body-local offset m, rotates with it).
+ *   Callout (static world point):
+ *     { "text": "x_0", "point": { "x": 0, "y": -0.1 }, "offset": { "x": 0, "y": -0.3 } }
+ *   Callout (dynamic / static object anchor):
+ *     { "text": "P", "target": { "kind": "body", "body": "bob" }, "offset": { "x": 0.2, "y": 0.1 } }
+ *     Set `"dynamic": false` and optional `"frozen": { "x": 120, "y": 80 }` (world px) to pin the leader tip.
  *
- * Selected callouts expose a white target handle (drag to retarget) and a
- * draggable text position. Inline labels drag their body-relative offset.
+ * Tool UX:
+ *   Alt+click on a body  → inline label at the click (inside/on the object).
+ *   Two-click elsewhere  → callout: 1st click picks target (body, vertex, or world point), 2nd places text.
+ *
+ * Selected callouts expose a white target handle (drag to retarget) and a draggable text position.
+ * Inline labels drag their body-relative offset only.
  */
 
 import { PX_PER_M, mToPx, pxToM } from '../units.js';
 import { COLORS, FONT_DIAGRAM } from '../theme.js';
 import { setSvgMathLabel } from '../math-text.js';
 import { wedgeAABBCenterWorld } from '../physics/bodies.js';
+import { worldToBodyLocal } from '../physics/layout-anchors.js';
 import { snapWorldCoord } from '../grid.js';
 import { worldPxToDisplayedM } from '../world-origin.js';
+import { resolveAnchor as resolveAnchorFromScene } from './measure-eval.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const HIT_PX = 10;
@@ -58,6 +66,71 @@ function applyDisplayOffsetM(basePx, offsetM) {
   };
 }
 
+/** @param {Map<string, number>} labelToId @param {object} a raw scene anchor */
+function _mapSceneAnchor(a, labelToId) {
+  if (!a || typeof a !== 'object') return null;
+  const out = { ...a };
+  if (out.kind === 'constraint') {
+    out.constraintLabel = typeof a.constraint === 'string' ? a.constraint : null;
+    out.end = a.end === 'B' ? 'B' : 'A';
+    return out.constraintLabel ? out : null;
+  }
+  if (out.kind === 'label') {
+    out.labelId = typeof a.label === 'string' ? a.label : null;
+    return out.labelId ? out : null;
+  }
+  if (typeof a.body === 'string') {
+    out.bodyId = labelToId.get(a.body);
+    out.bodyLabel = a.body;
+    delete out.body;
+  }
+  if (out.kind === 'world') {
+    const x = Number(a.x);
+    const y = Number(a.y);
+    return Number.isFinite(x) && Number.isFinite(y) ? { kind: 'world', x, y } : null;
+  }
+  if (out.bodyId == null && out.bodyLabel == null
+    && ['body', 'velocity', 'force', 'ray', 'vertex', 'horizontal'].includes(out.kind)) {
+    return null;
+  }
+  return out;
+}
+
+/** @param {object|null} anchor runtime anchor */
+function _anchorToScene(anchor) {
+  if (!anchor) return null;
+  if (anchor.kind === 'world') {
+    return { kind: 'world', x: anchor.x, y: anchor.y };
+  }
+  if (anchor.kind === 'constraint' && anchor.constraintLabel) {
+    return { kind: 'constraint', constraint: anchor.constraintLabel, end: anchor.end === 'B' ? 'B' : 'A' };
+  }
+  if (anchor.kind === 'label' && anchor.labelId) {
+    return { kind: 'label', label: anchor.labelId };
+  }
+  if (!anchor.bodyLabel) return null;
+  /** @type {Record<string, unknown>} */
+  const out = { kind: anchor.kind, body: anchor.bodyLabel };
+  if (anchor.vertex) out.vertex = anchor.vertex;
+  if (Number.isFinite(anchor.angleDeg)) out.angleDeg = anchor.angleDeg;
+  if (anchor.followVelocityX) out.followVelocityX = true;
+  if (Number.isFinite(anchor.dir)) out.dir = anchor.dir;
+  return out;
+}
+
+/** @param {import('matter-js').Body} body @param {{ x: number, y: number }} pt world px */
+function _clickToBodyOffsetM(body, pt) {
+  let cx = body.position.x;
+  let cy = body.position.y;
+  if (body._newtonType === 'wedge') {
+    const c = wedgeAABBCenterWorld(body);
+    cx = c.x;
+    cy = c.y;
+  }
+  const local = worldToBodyLocal(body, pt.x, pt.y);
+  return { x: pxToM(local.x), y: pxToM(local.y) };
+}
+
 /** @param {object|null} sceneDoc @param {{ x: number, y: number }} pointM */
 function pointMToWorldPx(sceneDoc, pointM) {
   const ox = (sceneDoc?.metricOrigin?.x ?? 0) * PX_PER_M;
@@ -87,6 +160,7 @@ export class LabelManager {
     getSnapEnabled = () => true,
     onBeforeChange = null,
     onSelect = null,
+    onPickModeChange = null,
   }) {
     this.layer = layer;
     this._leaderLayer = leaderLayer;
@@ -105,6 +179,13 @@ export class LabelManager {
     this._draft = null;
     /** @type {{ id: string, which: 'target'|'text', startPt: {x:number,y:number}, startPointM?: {x:number,y:number}, startOffsetM?: {x:number,y:number}, startPositionM?: {x:number,y:number}, historyPushed?: boolean }|null} */
     this._edit = null;
+    /** @type {{ id: string, mode: 'inline'|'callout-target'|'callout-world' }|null} */
+    this._pickMode = null;
+    this._onPickModeChange = onPickModeChange;
+    /** @type {((pt: {x:number,y:number}, snapGrid: boolean) => object)|null} */
+    this._pickAnchor = null;
+    /** @type {((anchor: object) => {x:number,y:number}|null)|null} */
+    this._resolveAnchor = null;
     this.layer.setAttribute('pointer-events', 'none');
     this._leaderLayer?.setAttribute('pointer-events', 'none');
   }
@@ -119,6 +200,7 @@ export class LabelManager {
     this._selectedId = null;
     this._draft = null;
     this._edit = null;
+    this._pickMode = null;
     this.sync();
   }
 
@@ -136,8 +218,170 @@ export class LabelManager {
     return mode === 'label';
   }
 
+  /**
+   * Shared anchor pick / resolve (from MeasurementManager).
+   * @param {{ pickAnchor?: (pt: {x:number,y:number}, snapGrid: boolean) => object, resolveAnchor?: (a: object) => {x:number,y:number}|null }} helpers
+   */
+  setAnchorHelpers(helpers = {}) {
+    this._pickAnchor = helpers.pickAnchor ?? null;
+    this._resolveAnchor = helpers.resolveAnchor ?? null;
+  }
+
   isEditing() {
     return !!this._edit;
+  }
+
+  isPicking() {
+    return !!this._pickMode;
+  }
+
+  /** Cancel attach-target pick mode (Escape). */
+  cancelPick() {
+    if (!this._pickMode) return false;
+    this._pickMode = null;
+    this._onPickModeChange?.();
+    this.sync();
+    return true;
+  }
+
+  /**
+   * Click on the canvas to attach the label (from properties panel).
+   * @param {string} id
+   * @param {'inline'|'callout-target'|'callout-world'} mode
+   */
+  beginPick(id, mode) {
+    if (!this.getById(id)) return;
+    this._pickMode = { id, mode };
+    this._draft = null;
+    this.select(id);
+    this._onPickModeChange?.();
+    this.sync();
+  }
+
+  /**
+   * Apply attach mode from the properties panel.
+   * "Inside object" with a known host → centered inline (no leader), no pick needed.
+   * @param {string} id
+   * @param {'inline'|'callout-target'|'callout-world'} mode
+   * @returns {'done'|'pick'} whether a canvas pick is still required
+   */
+  setAttachMode(id, mode) {
+    const item = this.getById(id);
+    if (!item) return 'done';
+
+    if (mode === 'inline') {
+      const body = this._hostBodyForItem(item);
+      if (body) {
+        this._onBeforeChange?.();
+        this._makeInlineCentered(item, body);
+        this._pickMode = null;
+        this._onPickModeChange?.();
+        this.sync();
+        return 'done';
+      }
+      this.beginPick(id, 'inline');
+      return 'pick';
+    }
+
+    // Callout modes: pick a new target (or keep current and wait for Pick).
+    this.beginPick(id, mode);
+    return 'pick';
+  }
+
+  /**
+   * Place the label inside `body` at its centre — no leader / callout.
+   * @param {object} item
+   * @param {import('matter-js').Body} body
+   */
+  _makeInlineCentered(item, body) {
+    item.placement = 'inline';
+    item.bodyLabel = body.label ?? item.bodyLabel ?? null;
+    item.bodyId = body.id;
+    item.offsetM = { x: 0, y: 0 };
+    delete item.targetAnchor;
+    delete item.pointM;
+    delete item.textOffsetM;
+    delete item.positionM;
+    delete item.frozenTarget;
+    item.dynamic = undefined;
+  }
+
+  /**
+   * Prefer body already hosting this label (inline or object callout).
+   * @param {object} item
+   * @returns {import('matter-js').Body|null}
+   */
+  _hostBodyForItem(item) {
+    if (!item) return null;
+    if (item.bodyId != null) {
+      const byId = this.engine.bodies.find(b => b.id === item.bodyId);
+      if (byId) return byId;
+    }
+    if (item.bodyLabel) {
+      const byLabel = this.engine.bodies.find(b => b.label === item.bodyLabel);
+      if (byLabel) return byLabel;
+    }
+    const a = item.targetAnchor;
+    if (a?.bodyId != null) {
+      const byId = this.engine.bodies.find(b => b.id === a.bodyId);
+      if (byId) return byId;
+    }
+    if (a?.bodyLabel) {
+      return this.engine.bodies.find(b => b.label === a.bodyLabel) ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Body label this label is attached to (inline host or callout target body).
+   * @param {object} item
+   */
+  hostBodyLabel(item) {
+    if (!item) return null;
+    if (item.placement === 'inline') return item.bodyLabel ?? null;
+    const a = item.targetAnchor;
+    if (a?.bodyLabel) return a.bodyLabel;
+    return null;
+  }
+
+  /** Object-browser rows (host nesting + display type). */
+  listForBrowser() {
+    return this.items.map(l => ({
+      id: l.id,
+      text: l.text,
+      hostBodyLabel: this.hostBodyLabel(l),
+      type: l.placement === 'inline'
+        ? 'inline'
+        : l.targetAnchor
+          ? 'callout · object'
+          : l.pointM
+            ? 'callout · point'
+            : 'label',
+    }));
+  }
+
+  /**
+   * @param {string} id
+   * @param {number} size px
+   */
+  setFontSize(id, size) {
+    const item = this.getById(id);
+    if (!item) return;
+    const n = Number(size);
+    if (!Number.isFinite(n)) return;
+    item.fontSize = Math.max(8, Math.min(48, Math.round(n)));
+    this.sync();
+  }
+
+  /**
+   * @param {string} id
+   * @param {boolean} italic
+   */
+  setItalic(id, italic) {
+    const item = this.getById(id);
+    if (!item) return;
+    item.italic = !!italic;
+    this.sync();
   }
 
   /** Cancel an in-progress handle drag (e.g. before undo/redo). */
@@ -207,6 +451,10 @@ export class LabelManager {
    * @returns {boolean}
    */
   handlePointerDown(pt, opts = {}) {
+    if (this._pickMode) {
+      return this._applyPick(pt);
+    }
+
     const mode = opts.mode ?? null;
 
     const handle = this._hitEditHandle(pt);
@@ -217,7 +465,7 @@ export class LabelManager {
 
     if (mode === 'label') {
       this._tool = 'label';
-      return this._pointerDown(pt);
+      return this._pointerDown(pt, opts);
     }
 
     if (mode === 'select') {
@@ -257,7 +505,7 @@ export class LabelManager {
 
   /**
    * Move a callout / standalone target (used when a measurement endpoint is
-   * attached to this label).
+   * attached to this label, or when dragging the white target handle).
    * @param {string} id
    * @param {{ x: number, y: number }} pt world px
    * @param {{ snap?: boolean }} [opts]
@@ -267,14 +515,145 @@ export class LabelManager {
     if (!item) return false;
     let p = { ...pt };
     if (opts.snap !== false && this._snapEnabled()) p = this._snapPt(p);
+
+    if (item.targetAnchor && this._pickAnchor) {
+      const picked = this._pickAnchor(p, opts.snap !== false && this._snapEnabled());
+      if (picked.kind === 'world') {
+        item.targetAnchor = null;
+        item.pointM = this._worldPxToPointM({ x: picked.x, y: picked.y });
+        item.dynamic = false;
+        item.frozenTarget = { x: picked.x, y: picked.y };
+        delete item.positionM;
+      } else {
+        item.targetAnchor = { ...picked };
+        item.dynamic = true;
+        delete item.frozenTarget;
+        delete item.pointM;
+      }
+      this.sync();
+      return true;
+    }
+
     const pointM = this._worldPxToPointM(p);
     if (item.placement === 'callout') {
       item.pointM = pointM;
+      item.dynamic = false;
+      item.frozenTarget = { ...p };
     } else if (item.placement === 'standalone') {
       item.positionM = pointM;
     } else {
       return false;
     }
+    this.sync();
+    return true;
+  }
+
+  /**
+   * Pin or unpin a callout leader tip (dynamic ↔ static world point).
+   * @param {string} id
+   * @param {boolean} dynamic
+   */
+  setDynamic(id, dynamic) {
+    const item = this.getById(id);
+    if (!item || item.placement !== 'callout') return;
+    if (dynamic) {
+      item.dynamic = true;
+      delete item.frozenTarget;
+      if (!item.targetAnchor && !item.pointM) item.dynamic = false;
+    } else {
+      const pos = this._resolveTarget(item);
+      if (!pos) return;
+      item.dynamic = false;
+      item.frozenTarget = { x: pos.x, y: pos.y };
+      if (item.targetAnchor) {
+        item.pointM = this._worldPxToPointM(pos);
+        item.targetAnchor = null;
+      }
+    }
+    this.sync();
+  }
+
+  /**
+   * @param {string} id
+   * @param {string} text
+   */
+  setText(id, text) {
+    const item = this.getById(id);
+    if (!item) return;
+    const next = String(text ?? '').trim();
+    if (!next) return;
+    item.text = next;
+    this.sync();
+  }
+
+  /**
+   * Keep the text where it is after retargeting / placement change.
+   * @param {object} item
+   */
+  _preserveTextOffsetFrom(item, targetPx) {
+    const textPos = this._resolveTextPos(item);
+    if (!textPos || !targetPx) return;
+    item.textOffsetM = {
+      x: pxToM(textPos.x - targetPx.x),
+      y: -pxToM(textPos.y - targetPx.y),
+    };
+  }
+
+  /** @param {{ x: number, y: number }} pt */
+  _applyPick(pt) {
+    const pick = this._pickMode;
+    if (!pick || !this._pickAnchor) return false;
+    const item = this.getById(pick.id);
+    if (!item) {
+      this._pickMode = null;
+      this._onPickModeChange?.();
+      return false;
+    }
+
+    const snapped = this._snapPt(pt);
+    const picked = this._pickAnchor(snapped, this._snapEnabled());
+    this._onBeforeChange?.();
+
+    if (pick.mode === 'inline') {
+      if (picked.kind === 'world') return false;
+      const body = picked.bodyId != null
+        ? this.engine.bodies.find(b => b.id === picked.bodyId)
+        : this.engine.bodies.find(b => b.label === picked.bodyLabel);
+      if (!body) return false;
+      this._makeInlineCentered(item, body);
+    } else if (pick.mode === 'callout-target') {
+      if (picked.kind === 'world') return false;
+      item.placement = 'callout';
+      item.targetAnchor = { ...picked };
+      item.dynamic = true;
+      delete item.bodyLabel;
+      delete item.bodyId;
+      delete item.offsetM;
+      delete item.pointM;
+      delete item.positionM;
+      delete item.frozenTarget;
+      const targetPx = this._resolveAnchor?.(picked);
+      if (targetPx) this._preserveTextOffsetFrom(item, targetPx);
+      if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
+    } else {
+      const wx = picked.kind === 'world' ? picked.x : snapped.x;
+      const wy = picked.kind === 'world' ? picked.y : snapped.y;
+      item.placement = 'callout';
+      item.pointM = this._worldPxToPointM({ x: wx, y: wy });
+      item.dynamic = false;
+      item.frozenTarget = { x: wx, y: wy };
+      delete item.targetAnchor;
+      delete item.bodyLabel;
+      delete item.bodyId;
+      delete item.offsetM;
+      delete item.positionM;
+      const targetPx = { x: wx, y: wy };
+      this._preserveTextOffsetFrom(item, targetPx);
+      if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
+    }
+
+    this._pickMode = null;
+    this._onPickModeChange?.();
     this.sync();
     return true;
   }
@@ -330,9 +709,10 @@ export class LabelManager {
 
   /**
    * @param {{ x: number, y: number }} pt
+   * @param {{ altKey?: boolean }} [opts]
    * @returns {boolean}
    */
-  _pointerDown(pt) {
+  _pointerDown(pt, opts = {}) {
     if (!this._tool) return false;
 
     const hit = this._hitTest(pt);
@@ -344,34 +724,94 @@ export class LabelManager {
     }
 
     const snapped = this._snapPt(pt);
+    const snapGrid = this._snapEnabled();
+    const picked = this._pickAnchor?.(snapped, snapGrid)
+      ?? { kind: 'world', x: snapped.x, y: snapped.y };
+
+    // Alt+click on a body → inline label at the click (text inside/on the object).
+    if (opts.altKey && picked.kind !== 'world' && (picked.bodyLabel || picked.bodyId != null)) {
+      const body = picked.bodyId != null
+        ? this.engine.bodies.find(b => b.id === picked.bodyId)
+        : this.engine.bodies.find(b => b.label === picked.bodyLabel);
+      if (body) {
+        this._onBeforeChange?.();
+        const item = {
+          id: `lbl${_nextId++}`,
+          text: 'm',
+          placement: 'inline',
+          bodyLabel: body.label ?? picked.bodyLabel,
+          bodyId: body.id,
+          offsetM: _clickToBodyOffsetM(body, snapped),
+          italic: true,
+        };
+        this.items.push(item);
+        this.select(item.id);
+        return true;
+      }
+    }
 
     if (!this._draft) {
-      this._draft = {
-        pointM: this._worldPxToPointM(snapped),
-        cursor: { ...snapped },
-      };
+      /** @type {object} */
+      const draft = { cursor: { ...snapped } };
+      if (picked.kind === 'world') {
+        draft.pointM = this._worldPxToPointM({ x: picked.x, y: picked.y });
+      } else {
+        draft.targetAnchor = { ...picked };
+        draft.dynamic = true;
+      }
+      this._draft = draft;
       this.sync();
       return true;
     }
 
     const textM = this._worldPxToPointM(snapped);
+    const draftTarget = this._draftTargetPx(this._draft);
+    const baseM = draftTarget
+      ? this._worldPxToPointM(draftTarget)
+      : this._draft.pointM;
     const offsetM = {
-      x: textM.x - this._draft.pointM.x,
-      y: textM.y - this._draft.pointM.y,
+      x: textM.x - (baseM?.x ?? textM.x),
+      y: textM.y - (baseM?.y ?? textM.y),
     };
 
     this._onBeforeChange?.();
+    /** @type {object} */
     const item = {
       id: `lbl${_nextId++}`,
       text: 'x',
       placement: 'callout',
-      pointM: { ...this._draft.pointM },
       textOffsetM: offsetM,
+      italic: true,
     };
+    if (this._draft.targetAnchor) {
+      item.targetAnchor = { ...this._draft.targetAnchor };
+      item.dynamic = this._draft.dynamic !== false;
+    } else if (this._draft.pointM) {
+      item.pointM = { ...this._draft.pointM };
+      item.dynamic = false;
+    }
     this.items.push(item);
     this._draft = null;
     this.select(item.id);
     return true;
+  }
+
+  /** @param {object} draft */
+  _draftTargetPx(draft) {
+    if (draft.targetAnchor) {
+      return this._resolveAnchor?.(draft.targetAnchor)
+        ?? (draft.targetAnchor.kind === 'world'
+          ? { x: draft.targetAnchor.x, y: draft.targetAnchor.y }
+          : null);
+    }
+    if (draft.pointM) {
+      const origin = this._getMetricOriginWorldPx();
+      return {
+        x: origin.x + mToPx(draft.pointM.x),
+        y: origin.y + mToPx(draft.pointM.y),
+      };
+    }
+    return null;
   }
 
   /** @param {{ x: number, y: number }} pt */
@@ -433,6 +873,28 @@ export class LabelManager {
           y: Number(raw.point.y) || 0,
         };
         item.textOffsetM = offsetM;
+        item.dynamic = false;
+        if (raw.frozen && typeof raw.frozen === 'object') {
+          const fx = Number(raw.frozen.x);
+          const fy = Number(raw.frozen.y);
+          if (Number.isFinite(fx) && Number.isFinite(fy)) {
+            item.frozenTarget = { x: fx, y: fy };
+          }
+        }
+      } else if (raw.target && typeof raw.target === 'object') {
+        const targetAnchor = _mapSceneAnchor(raw.target, labelToId);
+        if (!targetAnchor) continue;
+        item.placement = 'callout';
+        item.targetAnchor = targetAnchor;
+        item.textOffsetM = offsetM;
+        item.dynamic = raw.dynamic !== false;
+        if (raw.dynamic === false && raw.frozen && typeof raw.frozen === 'object') {
+          const fx = Number(raw.frozen.x);
+          const fy = Number(raw.frozen.y);
+          if (Number.isFinite(fx) && Number.isFinite(fy)) {
+            item.frozenTarget = { x: fx, y: fy };
+          }
+        }
       } else if (typeof raw.body === 'string' && raw.body) {
         item.placement = 'inline';
         item.bodyLabel = raw.body;
@@ -463,8 +925,21 @@ export class LabelManager {
       if (l.visible === false) entry.visible = false;
       if (l.fontSize != null && l.fontSize !== 13) entry.fontSize = l.fontSize;
 
-      if (l.placement === 'callout' && l.pointM) {
-        entry.point = { x: l.pointM.x, y: l.pointM.y };
+      if (l.placement === 'callout') {
+        if (l.targetAnchor) {
+          const target = _anchorToScene(l.targetAnchor);
+          if (target) entry.target = target;
+          if (l.dynamic === false) entry.dynamic = false;
+          if (l.frozenTarget) {
+            entry.frozen = { x: l.frozenTarget.x, y: l.frozenTarget.y };
+          }
+        } else if (l.pointM) {
+          entry.point = { x: l.pointM.x, y: l.pointM.y };
+          entry.dynamic = l.dynamic === false ? false : undefined;
+          if (l.frozenTarget) {
+            entry.frozen = { x: l.frozenTarget.x, y: l.frozenTarget.y };
+          }
+        }
         if (l.textOffsetM && (l.textOffsetM.x || l.textOffsetM.y)) {
           entry.offset = { x: l.textOffsetM.x, y: l.textOffsetM.y };
         }
@@ -539,14 +1014,27 @@ export class LabelManager {
 
   /** @param {object} item */
   _resolveTarget(item) {
-    if (item.placement === 'callout' && item.pointM) {
-      const origin = this._getMetricOriginWorldPx();
-      return {
-        x: origin.x + mToPx(item.pointM.x),
-        y: origin.y + mToPx(item.pointM.y),
-      };
-    }
     if (item.placement === 'inline') return this._bodyAttachPx(item);
+
+    if (item.targetAnchor) {
+      if (item.dynamic === false && item.frozenTarget) {
+        return { x: item.frozenTarget.x, y: item.frozenTarget.y };
+      }
+      return this._resolveAnchor?.(item.targetAnchor) ?? null;
+    }
+
+    if (item.placement === 'callout') {
+      if (item.dynamic === false && item.frozenTarget) {
+        return { x: item.frozenTarget.x, y: item.frozenTarget.y };
+      }
+      if (item.pointM) {
+        const origin = this._getMetricOriginWorldPx();
+        return {
+          x: origin.x + mToPx(item.pointM.x),
+          y: origin.y + mToPx(item.pointM.y),
+        };
+      }
+    }
     if (item.placement === 'standalone' && item.positionM) {
       const origin = this._getMetricOriginWorldPx();
       return {
@@ -559,12 +1047,9 @@ export class LabelManager {
 
   /** @param {object} item */
   _resolveTextPos(item) {
-    if (item.placement === 'callout' && item.pointM) {
-      const target = this._resolveTarget(item);
-      if (!target) return null;
-      return applyDisplayOffsetM(target, item.textOffsetM ?? { x: 0, y: 0 });
-    }
-    if (item.placement === 'standalone' && item.positionM) {
+    // Callouts (object or world) and standalone labels: text = target + textOffsetM.
+    // Object-target callouts used to skip the offset, so dragging text had no effect.
+    if (item.placement === 'callout' || item.placement === 'standalone') {
       const target = this._resolveTarget(item);
       if (!target) return null;
       return applyDisplayOffsetM(target, item.textOffsetM ?? { x: 0, y: 0 });
@@ -583,7 +1068,21 @@ export class LabelManager {
     const def = sceneDoc.labels.find(l => l?.id === id);
     if (!def) return null;
 
+    if (def.target && typeof def.target === 'object') {
+      if (def.dynamic === false && def.frozen && typeof def.frozen === 'object') {
+        const fx = Number(def.frozen.x);
+        const fy = Number(def.frozen.y);
+        if (Number.isFinite(fx) && Number.isFinite(fy)) return { x: fx, y: fy };
+      }
+      return resolveAnchorFromScene(def.target, poses, { sceneDoc });
+    }
+
     if (def.point && typeof def.point === 'object') {
+      if (def.dynamic === false && def.frozen && typeof def.frozen === 'object') {
+        const fx = Number(def.frozen.x);
+        const fy = Number(def.frozen.y);
+        if (Number.isFinite(fx) && Number.isFinite(fy)) return { x: fx, y: fy };
+      }
       return pointMToWorldPx(sceneDoc, def.point);
     }
 
@@ -757,15 +1256,31 @@ export class LabelManager {
       if (showChrome || selected) this.layer.appendChild(g);
     }
 
+    if (this._pickMode) {
+      const g = el('g', { class: 'scene-label scene-label-pick-hint' });
+      const t = el('text', {
+        x: 12,
+        y: 22,
+        fill: COLORS.inkLight ?? COLORS.ink,
+        'font-size': 12,
+        'font-family': FONT_DIAGRAM,
+        opacity: 0.85,
+      });
+      const hint = this._pickMode.mode === 'inline'
+        ? 'Click a body to place the label inside it'
+        : this._pickMode.mode === 'callout-target'
+          ? 'Click an object to point the leader at'
+          : 'Click a world point for the leader target';
+      t.textContent = `${hint} (Esc to cancel)`;
+      g.appendChild(t);
+      this.layer.appendChild(g);
+    }
+
     if (this._draft) {
-      const origin = this._getMetricOriginWorldPx();
-      const target = {
-        x: origin.x + mToPx(this._draft.pointM.x),
-        y: origin.y + mToPx(this._draft.pointM.y),
-      };
+      const target = this._draftTargetPx(this._draft);
       const textPos = this._draft.cursor;
       const g = el('g', { class: 'scene-label scene-label-callout draft' });
-      this._appendPointLeader(g, g, textPos, target, ink, false);
+      if (target) this._appendPointLeader(g, g, textPos, target, ink, false);
       this._appendLabelText(g, textPos, { text: 'x', italic: true }, true);
       this.layer.appendChild(g);
     }

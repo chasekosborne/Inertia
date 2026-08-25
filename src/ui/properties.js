@@ -21,6 +21,7 @@ import {
   bodyAngularMomentumSI,
 } from '../physics/angular.js';
 import { updateCompoundPart } from '../physics/sticky.js';
+import { retargetBodyAttachments } from '../physics/layout-anchors.js';
 import {
   listRopeSegments, rebuildRope, removeRope, ropeCenterlineWorldPx, ROPE_THICKNESS_M,
   ROPE_MIN_SEGMENTS, ROPE_MAX_SEGMENTS, clampRopeSegments,
@@ -659,41 +660,48 @@ export class PropertiesPanel {
     });
   }
 
-  /** Text label (inline on body or callout to a point). @param {string} id */
+  /** Text label (inline on body or callout to a point / object). @param {string} id */
   _buildLabelPanel(id) {
     const mgr = this._measurementHooks?.getLabelManager?.();
     const l = mgr?.getById?.(id);
     if (!l) { this.clear(); return; }
 
     this._current = { type: 'label', id: l.id };
-    const placement = l.placement === 'inline' ? 'Inline on body'
-      : l.placement === 'callout' ? 'Callout to point'
+    const attachMode = l.placement === 'inline'
+      ? 'inline'
+      : l.targetAnchor
+        ? 'callout-target'
+        : 'callout-world';
+    const placement = l.placement === 'inline' ? 'Inside object (centred)'
+      : l.placement === 'callout'
+        ? (l.targetAnchor
+          ? (l.dynamic !== false ? 'Callout · follows target' : 'Callout · fixed point')
+          : 'Callout · world point')
         : 'Standalone';
+    const hostLabel = mgr.hostBodyLabel?.(l);
 
     let anchorRows = '';
     if (l.placement === 'inline') {
       anchorRows = `
       <div class="prop-row">
         <span class="prop-label">Body</span>
-        <span class="prop-value" style="opacity:0.85">${_escapeHtml(l.bodyLabel ?? '—')}</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Offset x (m)</span>
-        <span class="prop-value" style="opacity:0.85">${(l.offsetM?.x ?? 0).toFixed(3)}</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">Offset y (m)</span>
-        <span class="prop-value" style="opacity:0.85">${(l.offsetM?.y ?? 0).toFixed(3)}</span>
+        <span class="prop-value" style="opacity:0.85">${_escapeHtml(l.bodyLabel ?? hostLabel ?? '—')}</span>
       </div>`;
     } else if (l.placement === 'callout') {
+      const targetSummary = l.targetAnchor
+        ? _escapeHtml(_anchorSummaryLabel(l.targetAnchor))
+        : `(${ (l.pointM?.x ?? 0).toFixed(3) }, ${ (l.pointM?.y ?? 0).toFixed(3) }) m`;
       anchorRows = `
       <div class="prop-row">
-        <span class="prop-label">Point x (m)</span>
-        <span class="prop-value" style="opacity:0.85">${(l.pointM?.x ?? 0).toFixed(3)}</span>
+        <span class="prop-label">Target</span>
+        <span class="prop-value" style="opacity:0.85">${targetSummary}</span>
       </div>
       <div class="prop-row">
-        <span class="prop-label">Point y (m)</span>
-        <span class="prop-value" style="opacity:0.85">${(l.pointM?.y ?? 0).toFixed(3)}</span>
+        <span class="prop-label">Follow target</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="prop-label-dynamic" ${l.dynamic !== false && !!l.targetAnchor ? 'checked' : ''} ${l.targetAnchor ? '' : 'disabled'}/>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
       </div>
       <div class="prop-row">
         <span class="prop-label">Text offset x (m)</span>
@@ -719,7 +727,31 @@ export class PropertiesPanel {
       <div class="prop-section-title">Label</div>
       <div class="prop-row">
         <span class="prop-label">Text</span>
-        <span class="prop-value" style="opacity:0.85">${_escapeHtml(l.text)}</span>
+        <input class="prop-value" id="prop-label-text" type="text" value="${_escapeHtml(l.text)}"
+          placeholder="theta_0, \\theta_{0}, $x$" title="LaTeX-style math: theta_0, \\omega, Greek names"/>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Font size (px)</span>
+        <input class="prop-value" id="prop-label-font" type="number" min="8" max="48" step="1" value="${l.fontSize ?? 13}"/>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Italic</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="prop-label-italic" ${l.italic ? 'checked' : ''}/>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Attach</span>
+        <select class="prop-value" id="prop-label-attach-mode">
+          <option value="inline" ${attachMode === 'inline' ? 'selected' : ''}>Inside object</option>
+          <option value="callout-target" ${attachMode === 'callout-target' ? 'selected' : ''}>Point to object</option>
+          <option value="callout-world" ${attachMode === 'callout-world' ? 'selected' : ''}>Point to world</option>
+        </select>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label"></span>
+        <button type="button" class="prop-action-btn" id="prop-label-pick">Pick on canvas…</button>
       </div>
       <div class="prop-row">
         <span class="prop-label">Placement</span>
@@ -735,10 +767,49 @@ export class PropertiesPanel {
       ${anchorRows}
     `;
 
+    this.panel.querySelector('#prop-label-text')?.addEventListener('change', e => {
+      this._push();
+      mgr.setText(l.id, e.target.value);
+      this._measurementHooks?.onChanged?.();
+      this.show({ type: 'label', id: l.id });
+    });
+
+    this.panel.querySelector('#prop-label-font')?.addEventListener('change', e => {
+      this._push();
+      mgr.setFontSize(l.id, parseFloat(e.target.value));
+      this._measurementHooks?.onChanged?.();
+    });
+
+    this.panel.querySelector('#prop-label-italic')?.addEventListener('change', e => {
+      this._push();
+      mgr.setItalic(l.id, !!e.target.checked);
+      this._measurementHooks?.onChanged?.();
+    });
+
+    this.panel.querySelector('#prop-label-pick')?.addEventListener('click', () => {
+      const mode = this.panel.querySelector('#prop-label-attach-mode')?.value ?? 'inline';
+      mgr.beginPick(l.id, mode);
+    });
+
+    this.panel.querySelector('#prop-label-attach-mode')?.addEventListener('change', e => {
+      const mode = e.target.value;
+      this._push();
+      const result = mgr.setAttachMode?.(l.id, mode) ?? 'pick';
+      this._measurementHooks?.onChanged?.();
+      if (result === 'done') this.show({ type: 'label', id: l.id });
+    });
+
     this.panel.querySelector('#prop-label-visible')?.addEventListener('change', e => {
       this._push();
       mgr.setVisible(l.id, !!e.target.checked);
       this._measurementHooks?.onChanged?.();
+    });
+
+    this.panel.querySelector('#prop-label-dynamic')?.addEventListener('change', e => {
+      this._push();
+      mgr.setDynamic(l.id, !!e.target.checked);
+      this._measurementHooks?.onChanged?.();
+      this.show({ type: 'label', id: l.id });
     });
   }
 
@@ -876,6 +947,11 @@ export class PropertiesPanel {
         this._setVField('#prop-con-max-ext', c._maxExtensionM != null ? c._maxExtensionM.toFixed(3) : '');
         this._setVField('#prop-con-max-com', c._maxCompressionM != null ? c._maxCompressionM.toFixed(3) : '');
       }
+      return;
+    }
+    if (this._current.type === 'label') {
+      const mgr = this._measurementHooks?.getLabelManager?.();
+      if (!mgr?.getById?.(this._current.id)) { this.clear(); return; }
       return;
     }
     const body = this.engine.bodies.find(b => b.id == this._current.id);
@@ -1381,6 +1457,7 @@ export class PropertiesPanel {
     });
     if (body.label) neo.label = body.label;
 
+    retargetBodyAttachments(this.engine, body, neo);
     this._push();
     this.engine.removeBody(body);
     this.engine.addBody(neo);
@@ -1631,7 +1708,7 @@ export class PropertiesPanel {
       </div>
       <div class="prop-row">
         <span class="prop-label">thickness (m)</span>
-        <input class="prop-value" id="prop-rope-thick" type="number" step="0.005" min="0.02" max="0.2" value="${thickM.toFixed(3)}"/>
+        <input class="prop-value" id="prop-rope-thick" type="number" step="0.005" min="0.01" max="0.2" value="${thickM.toFixed(3)}"/>
       </div>
       <div class="prop-row">
         <span class="prop-label">total mass (kg)</span>
@@ -1660,7 +1737,7 @@ export class PropertiesPanel {
       this._push();
       const n = clampRopeSegments(parseFloat(this.panel.querySelector('#prop-rope-segs')?.value) || nSeg);
       const mass = Math.max(0.05, parseFloat(this.panel.querySelector('#prop-rope-mass')?.value) || totalMass);
-      const thick = Math.max(0.02, parseFloat(this.panel.querySelector('#prop-rope-thick')?.value) || thickM);
+      const thick = Math.max(0.01, parseFloat(this.panel.querySelector('#prop-rope-thick')?.value) || thickM);
       const muk = this._parseNonNeg(this.panel.querySelector('#prop-muk'));
       const mus = Math.max(muk, this._parseNonNeg(this.panel.querySelector('#prop-mus')));
       const nameNow = String(this.panel.querySelector('#prop-rope-name')?.value ?? '').trim() || name;
@@ -2088,6 +2165,18 @@ function _ropeAttachLabel(engine, ropeId, which) {
   const host = getRopeEndAttachment(engine, ropeId, which);
   if (!host?.body) return 'Free';
   return bodyDisplayName(host.body);
+}
+
+function _anchorSummaryLabel(anchor) {
+  if (!anchor) return '—';
+  if (anchor.kind === 'world') return `World (${Number(anchor.x).toFixed(0)}, ${Number(anchor.y).toFixed(0)}) px`;
+  if (anchor.kind === 'body') return `Body · ${anchor.bodyLabel ?? '?'}`;
+  if (anchor.kind === 'vertex') return `Vertex ${anchor.vertex ?? ''} · ${anchor.bodyLabel ?? '?'}`;
+  if (anchor.kind === 'velocity') return `Velocity · ${anchor.bodyLabel ?? '?'}`;
+  if (anchor.kind === 'force') return `Force · ${anchor.bodyLabel ?? '?'}`;
+  if (anchor.kind === 'constraint') return `Constraint · ${anchor.constraintLabel ?? '?'}`;
+  if (anchor.kind === 'label') return `Label · ${anchor.labelId ?? '?'}`;
+  return anchor.kind ?? '—';
 }
 
 function _escapeHtml(s) {

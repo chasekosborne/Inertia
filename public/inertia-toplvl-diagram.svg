@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="203.53595mm"
+   height="91.185104mm"
+   viewBox="0 0 203.53595 91.185104"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   sodipodi:docname="inertia-toplvl-diagram.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="0.41551312"
+     inkscape:cx="623.32569"
+     inkscape:cy="560.75245"
+     inkscape:window-width="1644"
+     inkscape:window-height="1027"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g13" />
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <g
+       id="g13"
+       transform="translate(-2.8366795,0.57238483)">
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-size:8.46667px;line-height:1;font-family:'DM Sans';-inkscape-font-specification:'DM Sans Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:3"
+         x="18.583307"
+         y="17.697826"
+         id="text1"><tspan
+           sodipodi:role="line"
+           id="tspan1"
+           style="font-style:normal;font-size:8.46667px;fill:#000000;stroke-width:3"
+           x="18.583307"
+           y="17.697826">app/</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-size:6.35px;line-height:1;font-family:'DM Sans';-inkscape-font-specification:'DM Sans Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:3"
+         x="21.410507"
+         y="42.633713"
+         id="text1-7"><tspan
+           sodipodi:role="line"
+           id="tspan1-3"
+           style="font-style:normal;font-size:6.35px;fill:#000000;stroke-width:3"
+           x="21.410507"
+           y="42.633713">editor/ <tspan
+   style="fill:#808080"
+   id="tspan12">(UI)</tspan></tspan></text>
+      <rect
+         style="fill:none;stroke:#000000;stroke-width:0.529167;stroke-dasharray:none"
+         id="rect1"
+         width="176.89952"
+         height="73.60511"
+         x="16.154894"
+         y="8.2176123" />
+      <rect
+         style="fill:none;stroke:#000000;stroke-width:0.529167;stroke-dasharray:none"
+         id="rect1-9"
+         width="35.54834"
+         height="37.356842"
+         x="19.158686"
+         y="34.412083" />
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.23333px;line-height:1;font-family:'Adwaita Mono';-inkscape-font-specification:'Adwaita Mono Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke:none;stroke-width:0.529167;stroke-dasharray:none"
+         x="18.739944"
+         y="24.819719"
+         id="text2"><tspan
+           sodipodi:role="line"
+           id="tspan2"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="18.739944"
+           y="24.819719">-bootstrap </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="18.739944"
+           y="29.053049"
+           id="tspan4">-modes (setup | live | review)</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="18.739944"
+           y="33.286377"
+           id="tspan3" /></text>
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.23333px;line-height:1;font-family:'Adwaita Mono';-inkscape-font-specification:'Adwaita Mono Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke:none;stroke-width:0.529167;stroke-dasharray:none"
+         x="21.349125"
+         y="49.078007"
+         id="text2-3"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="21.349125"
+           y="49.078007"
+           id="tspan3-4">-panels </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="21.349125"
+           y="53.311337"
+           id="tspan8">-tools</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="21.349125"
+           y="57.544666"
+           id="tspan6">-handles </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="21.349125"
+           y="61.777996"
+           id="tspan7">-SVG</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="21.349125"
+           y="66.011322"
+           id="tspan11">-live view</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-size:6.35px;line-height:1;font-family:'DM Sans';-inkscape-font-specification:'DM Sans Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:3"
+         x="65.913193"
+         y="42.633713"
+         id="text1-7-0"><tspan
+           sodipodi:role="line"
+           id="tspan1-3-3"
+           style="font-style:normal;font-size:6.35px;fill:#000000;stroke-width:3"
+           x="65.913193"
+           y="42.633713">core/</tspan></text>
+      <rect
+         style="fill:none;stroke:#000000;stroke-width:0.549066;stroke-dasharray:none"
+         id="rect1-9-6"
+         width="63.968117"
+         height="31.418558"
+         x="63.750572"
+         y="34.501282" />
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.23333px;line-height:1;font-family:'Adwaita Mono';-inkscape-font-specification:'Adwaita Mono Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke:none;stroke-width:0.529167;stroke-dasharray:none"
+         x="65.851814"
+         y="49.078007"
+         id="text2-3-1"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="65.851814"
+           y="49.078007"
+           id="tspan3-4-0">-domain + sim </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="65.851814"
+           y="53.311337"
+           id="tspan8-6">-entities &amp; components</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="65.851814"
+           y="57.544666"
+           id="tspan6-3">-systems </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="65.851814"
+           y="61.777996"
+           id="tspan11-0">-matter bridge</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-size:6.35px;line-height:1;font-family:'DM Sans';-inkscape-font-specification:'DM Sans Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke-width:3"
+         x="142.50191"
+         y="42.633713"
+         id="text1-7-0-4"><tspan
+           sodipodi:role="line"
+           id="tspan1-3-3-7"
+           style="font-style:normal;font-size:6.35px;fill:#000000;stroke-width:3"
+           x="142.50191"
+           y="42.633713">io/</tspan></text>
+      <rect
+         style="fill:none;stroke:#000000;stroke-width:0.529167;stroke-dasharray:none"
+         id="rect1-9-6-6"
+         width="44.591297"
+         height="38.822842"
+         x="140.31955"
+         y="34.481541" />
+      <text
+         xml:space="preserve"
+         style="font-style:italic;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:4.23333px;line-height:1;font-family:'Adwaita Mono';-inkscape-font-specification:'Adwaita Mono Italic';letter-spacing:0px;word-spacing:0.00264583px;writing-mode:lr-tb;direction:ltr;fill:#000000;stroke:none;stroke-width:0.529167;stroke-dasharray:none"
+         x="142.44052"
+         y="49.078011"
+         id="text2-3-1-5"><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="142.44052"
+           y="49.078011"
+           id="tspan3-4-0-6">-files </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="142.44052"
+           y="53.31134"
+           id="tspan8-6-9">-clipboard</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="142.44052"
+           y="57.54467"
+           id="tspan6-3-3">-export </tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="142.44052"
+           y="61.778"
+           id="tspan11-0-7">-demos</tspan><tspan
+           sodipodi:role="line"
+           style="font-style:normal;font-size:4.23333px;fill:#808080;stroke:none;stroke-width:0.529167"
+           x="142.44052"
+           y="66.01133"
+           id="tspan13">-recorder media</tspan></text>
+    </g>
+  </g>
+</svg>

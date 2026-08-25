@@ -4,6 +4,12 @@
  * RodConstraint  : fixed separation via Matter (stiffness = 1).
  * SpringConstraint: Hooke's law only (F = −k Δx), never enters Matter's solver.
  * Viscous damper c is omitted: use contact friction and air drag for dissipation.
+ *
+ * Matter quirk: for *static* bodies, Constraint.solve treats pointA/pointB as
+ * world-space offsets from body.position (no rotation by body.angle). Dynamic
+ * bodies keep body-local points (Matter rotates them in place as angle changes).
+ * Our public API always uses body-local offsets; RodConstraint / strings sync
+ * the Matter representation via {@link matterPointFromLocal}.
  */
 
 import Matter from 'matter-js';
@@ -14,10 +20,42 @@ const { Constraint, World, Body, Common } = Matter;
 let _labelCounter = 0;
 const nextLabel = (prefix) => `${prefix}_${++_labelCounter}`;
 
+/**
+ * Body-local → Matter constraint point.
+ * Static bodies: rotate into a world-space offset (Matter does not apply angle).
+ * Dynamic / null: leave as body-local (or absolute world point when body is null).
+ *
+ * @param {import('matter-js').Body|null|undefined} body
+ * @param {{ x: number, y: number }} local
+ */
+export function matterPointFromLocal(body, local) {
+  const p = { x: local?.x ?? 0, y: local?.y ?? 0 };
+  if (!body || !body.isStatic) return p;
+  const c = Math.cos(body.angle);
+  const s = Math.sin(body.angle);
+  return { x: c * p.x - s * p.y, y: s * p.x + c * p.y };
+}
+
+/**
+ * Body-local attachment stored on a constraint (Rod / Spring / string).
+ * @param {object} c
+ * @param {'A'|'B'} which
+ */
+export function constraintLocalPoint(c, which) {
+  if (which === 'A') {
+    if (c._localA) return c._localA;
+    if (c._pointALocal) return c._pointALocal;
+    return c.pointA ?? { x: 0, y: 0 };
+  }
+  if (c._localB) return c._localB;
+  if (c._pointBLocal) return c._pointBLocal;
+  return c.pointB ?? { x: 0, y: 0 };
+}
+
 /** World position of an attachment point (body-local or fixed world point). */
 export function constraintAnchorWorld(c, which) {
   const body = which === 'A' ? c.bodyA : c.bodyB;
-  const local = which === 'A' ? c.pointA : c.pointB;
+  const local = constraintLocalPoint(c, which);
   if (!body) return { x: local.x, y: local.y };
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
@@ -38,6 +76,26 @@ function separationPx(bodyA, bodyB, pointA, pointB) {
 }
 
 /**
+ * Write body-local points onto a Matter (or Matter-backed) constraint, converting
+ * static ends to Matter's world-offset form.
+ * @param {object} c
+ */
+export function syncMatterConstraintPoints(c) {
+  if (!c) return;
+  if (typeof c._syncMatterPoints === 'function') {
+    c._syncMatterPoints();
+    return;
+  }
+  // Legacy Matter string: locals on _pointALocal / _pointBLocal when present.
+  const localA = c._pointALocal ?? c.pointA ?? { x: 0, y: 0 };
+  const localB = c._pointBLocal ?? c.pointB ?? { x: 0, y: 0 };
+  if (!c._pointALocal) c._pointALocal = { x: localA.x, y: localA.y };
+  if (!c._pointBLocal) c._pointBLocal = { x: localB.x, y: localB.y };
+  c.pointA = matterPointFromLocal(c.bodyA, c._pointALocal);
+  c.pointB = matterPointFromLocal(c.bodyB, c._pointBLocal);
+}
+
+/**
  * Rigid rod: enforces a fixed distance between attachment points.
  * Implemented as a fully stiff Matter.js distance constraint.
  */
@@ -49,15 +107,15 @@ export class RodConstraint {
    */
   constructor(bodyA, bodyB, opts = {}) {
     this._newtonType = 'rod';
-    const pointA = { ...(opts.pointA ?? { x: 0, y: 0 }) };
-    const pointB = { ...(opts.pointB ?? { x: 0, y: 0 }) };
-    const length = opts.length ?? separationPx(bodyA, bodyB, pointA, pointB);
+    this._localA = { ...(opts.pointA ?? { x: 0, y: 0 }) };
+    this._localB = { ...(opts.pointB ?? { x: 0, y: 0 }) };
+    const length = opts.length ?? separationPx(bodyA, bodyB, this._localA, this._localB);
 
     this._matter = Constraint.create({
       bodyA,
       bodyB,
-      pointA,
-      pointB,
+      pointA: matterPointFromLocal(bodyA, this._localA),
+      pointB: matterPointFromLocal(bodyB, this._localB),
       length,
       stiffness: opts.stiffness ?? 1,
       damping: opts.damping ?? 0,
@@ -70,14 +128,27 @@ export class RodConstraint {
   set label(v) { this._matter.label = v; }
 
   get bodyA() { return this._matter.bodyA; }
-  set bodyA(v) { this._matter.bodyA = v; }
+  set bodyA(v) {
+    this._matter.bodyA = v;
+    this._syncMatterPoints();
+  }
   get bodyB() { return this._matter.bodyB; }
-  set bodyB(v) { this._matter.bodyB = v; }
+  set bodyB(v) {
+    this._matter.bodyB = v;
+    this._syncMatterPoints();
+  }
 
-  get pointA() { return this._matter.pointA; }
-  set pointA(v) { this._matter.pointA = v; }
-  get pointB() { return this._matter.pointB; }
-  set pointB(v) { this._matter.pointB = v; }
+  /** Body-local attach (public API / serialize). */
+  get pointA() { return this._localA; }
+  set pointA(v) {
+    this._localA = { x: v?.x ?? 0, y: v?.y ?? 0 };
+    this._syncMatterPoints();
+  }
+  get pointB() { return this._localB; }
+  set pointB(v) {
+    this._localB = { x: v?.x ?? 0, y: v?.y ?? 0 };
+    this._syncMatterPoints();
+  }
 
   /** Fixed link length (px): enforced rigidly each step. */
   get length() { return this._matter.length; }
@@ -90,11 +161,19 @@ export class RodConstraint {
   get angleB() { return this._matter.angleB; }
   set angleB(v) { this._matter.angleB = v; }
 
+  _syncMatterPoints() {
+    this._matter.pointA = matterPointFromLocal(this._matter.bodyA, this._localA);
+    this._matter.pointB = matterPointFromLocal(this._matter.bodyB, this._localB);
+    if (this._matter.bodyA) this._matter.angleA = this._matter.bodyA.angle;
+    if (this._matter.bodyB) this._matter.angleB = this._matter.bodyB.angle;
+  }
+
   /** @param {import('./engine.js').PhysicsEngine} engine */
   attachEngine(engine) {
     // Rope links are projected with PBD (see rope.js): Matter's Gauss-Seidel
     // distance constraints stretch and blow up long chains under gravity.
     if (this._ropeLink) return;
+    this._syncMatterPoints();
     World.add(engine.world, this._matter);
   }
 

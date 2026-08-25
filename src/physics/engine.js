@@ -1,7 +1,7 @@
 import Matter from 'matter-js';
 import { BASE_DELTA_MS, METRIC_BASIS_DEFAULT_M, mToPx } from '../units.js';
 import { createMetricBasis } from './bodies.js';
-import { SpringConstraint, RodConstraint } from './constraints.js';
+import { SpringConstraint, RodConstraint, syncMatterConstraintPoints } from './constraints.js';
 import { applyCoulombFriction, snapStaticFrictionRest } from './friction.js';
 import { appliedForceToMatter, getAppliedForce } from './applied-force.js';
 import { appliedTorqueToMatter, getAppliedTorque } from './applied-torque.js';
@@ -9,6 +9,7 @@ import { ccdStepFraction } from './ccd.js';
 import { installStickyCollisions } from './sticky.js';
 import { installRoundContactSolver } from './circle-contact.js';
 import { solveRopeConstraints, ROPE_PBD_POLISH, clearRopeAttachmentsToBody, retargetRopeHosts } from './rope.js';
+import { installConstraintLinkCollisionFilter } from './layout-anchors.js';
 import {
   mechanicalEnergy,
   restoreMechanicalEnergy,
@@ -81,6 +82,7 @@ export class PhysicsEngine {
 
     Events.on(this.engine, 'beforeUpdate', () => {
       this._tuneConstraintIterations();
+      this._syncStaticConstraintPoints();
       this._solveSprings();
       this._solveAppliedForces();
       this._solveAppliedTorques();
@@ -95,6 +97,7 @@ export class PhysicsEngine {
     });
 
     installStickyCollisions(this);
+    installConstraintLinkCollisionFilter(this);
 
     // Always start with a metric basis so the sandbox never boots empty.
     World.add(
@@ -111,6 +114,31 @@ export class PhysicsEngine {
       other++;
     }
     this.engine.constraintIterations = other > 0 ? 12 : 10;
+  }
+
+  /**
+   * Keep Matter static-end offsets aligned with body-local attach points
+   * (ground / anchored bodies may move in setup without recreating the link).
+   */
+  _syncStaticConstraintPoints() {
+    for (const c of this._constraints) {
+      if (c._ropeLink || c instanceof SpringConstraint) continue;
+      const aStatic = !c.bodyA || c.bodyA.isStatic;
+      const bStatic = !c.bodyB || c.bodyB.isStatic;
+      if (!aStatic && !bStatic) continue;
+      syncMatterConstraintPoints(c);
+    }
+  }
+
+  /**
+   * Keep Matter static-end offsets in sync with body-local anchors (angled ground,
+   * dragged slabs). Dynamic ends stay body-local; Matter rotates those itself.
+   */
+  _syncStaticConstraintPoints() {
+    for (const c of this._constraints) {
+      if (c._ropeLink || c instanceof SpringConstraint) continue;
+      syncMatterConstraintPoints(c);
+    }
   }
 
   /** Apply Hooke's-law forces for all spring constraints (not Matter rigid links). */
@@ -152,7 +180,7 @@ export class PhysicsEngine {
   /** Textbook Coulomb friction (see {@link applyCoulombFriction}). */
   _solveFriction() {
     if (!this._integrating) return;
-    if (applyCoulombFriction(this.bodies, this.engine.gravity)) {
+    if (applyCoulombFriction(this.bodies, this.engine.gravity, this._constraints)) {
       this.noteEnergyDissipation();
     }
   }
@@ -198,6 +226,12 @@ export class PhysicsEngine {
   removeBody(body)    {
     if (body && body._newtonType === 'metric-basis') return;
     clearRopeAttachmentsToBody(this, body);
+    for (const c of [...this._constraints]) {
+      if (c.bodyA === body || c.bodyB === body
+        || c.bodyA?.id === body.id || c.bodyB?.id === body.id) {
+        this.removeConstraint(c);
+      }
+    }
     World.remove(this.world, body);
     this.invalidateEnergyTarget();
   }
@@ -324,7 +358,7 @@ export class PhysicsEngine {
       if (isFinite(E0)) this._energyTarget = E0;
     }
     try {
-      const t = ccdStepFraction(Composite.allBodies(this.world));
+      const t = ccdStepFraction(Composite.allBodies(this.world), this._constraints);
       if (t < 1 - 1e-4) {
         Engine.update(this.engine, t * dt);
         Engine.update(this.engine, (1 - t) * dt);

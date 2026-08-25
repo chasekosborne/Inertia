@@ -4,13 +4,96 @@
 
 import Matter from 'matter-js';
 import { createGround, anchorContainsWorldPoint } from './bodies.js';
-import { constraintAnchorWorld, isSpringConstraint } from './constraints.js';
+import {
+  constraintAnchorWorld,
+  isSpringConstraint,
+  syncMatterConstraintPoints,
+} from './constraints.js';
 import { snapWorldCoord } from '../grid.js';
-import { hangingBodiesFromRopes } from './rope.js';
+import { hangingBodiesFromRopes, listRopeSegments, setRopeEndAttachment } from './rope.js';
 
 export { constraintAnchorWorld };
 
-const { World, Body } = Matter;
+const { World, Body, Events } = Matter;
+
+/**
+ * True when `a` and `b` are ends of the same rod or string.
+ * Linked pairs skip mutual collision so a bob does not fight the ground/slab it hangs from.
+ */
+export function areConstraintLinked(a, b, constraints) {
+  if (!a || !b) return false;
+  for (const c of constraints ?? []) {
+    if (c._ropeLink) continue;
+    const t = c._newtonType;
+    if (t !== 'rod' && t !== 'string') continue;
+    const ba = c.bodyA;
+    const bb = c.bodyB;
+    if (!ba || !bb) continue;
+    const aId = a.id;
+    const bId = b.id;
+    if ((ba === a || ba.id === aId) && (bb === b || bb.id === bId)) return true;
+    if ((ba === b || ba.id === bId) && (bb === a || bb.id === aId)) return true;
+  }
+  return false;
+}
+
+/** Matter pair body → parent (compounds report the part; links use the parent). */
+function _pairBody(b) {
+  return b?.parent && b.parent !== b ? b.parent : b;
+}
+
+/** Disable Matter contact between rod/string ends (ground pendula, linked dumbbells). */
+export function installConstraintLinkCollisionFilter(physics) {
+  const suppress = event => {
+    for (const pair of event.pairs) {
+      if (areConstraintLinked(_pairBody(pair.bodyA), _pairBody(pair.bodyB), physics.constraints)) {
+        pair.isActive = false;
+      }
+    }
+  };
+  Events.on(physics.engine, 'collisionStart', suppress);
+  Events.on(physics.engine, 'collisionActive', suppress);
+}
+
+/**
+ * Move rod/string/spring ends (and rope pins) from `oldBody` onto `newBody`,
+ * preserving world attachment points.
+ */
+export function retargetBodyAttachments(engine, oldBody, newBody) {
+  if (!oldBody || !newBody) return;
+  for (const c of engine.constraints ?? []) {
+    if (c._ropeLink) continue;
+    for (const which of /** @type {const} */ (['A', 'B'])) {
+      const body = which === 'A' ? c.bodyA : c.bodyB;
+      if (body !== oldBody && body?.id !== oldBody.id) continue;
+      const world = constraintAnchorWorld(c, which);
+      const local = worldToBodyLocal(newBody, world.x, world.y);
+      if (which === 'A') {
+        c.bodyA = newBody;
+        if (c._pointALocal) c._pointALocal = { ...local };
+        c.pointA = local;
+      } else {
+        c.bodyB = newBody;
+        if (c._pointBLocal) c._pointBLocal = { ...local };
+        c.pointB = local;
+      }
+      if (c._newtonType === 'string' && !(typeof c._syncMatterPoints === 'function')) {
+        syncMatterConstraintPoints(c);
+      }
+      _syncConstraintAfterAnchorEdit(c);
+    }
+  }
+  for (const n of engine.bodies ?? []) {
+    if (!n._ropeHost?.body) continue;
+    const host = n._ropeHost.body;
+    if (host !== oldBody && host?.id !== oldBody.id) continue;
+    const world = constraintAnchorWorld({ bodyA: oldBody, pointA: n._ropeHost.local }, 'A');
+    const local = worldToBodyLocal(newBody, world.x, world.y);
+    const nodes = listRopeSegments(engine, n._ropeId);
+    const which = nodes[0] === n ? 'A' : nodes[nodes.length - 1] === n ? 'B' : null;
+    if (which) setRopeEndAttachment(engine, n._ropeId, which, newBody, local);
+  }
+}
 
 /** True when a blue constraint-end handle should stretch length (not reattach). */
 export function isConstraintLengthStretchBody(body) {
@@ -104,6 +187,11 @@ function _endActsAsFixedPivot(body) {
   return !body || (body.isStatic && body._newtonType !== 'metric-basis');
 }
 
+/** True for the anchor pivot object (not ground or other static bodies). */
+function _isPivotObject(body) {
+  return !!body && body._newtonType === 'anchor';
+}
+
 /**
  * Dynamic bodies reachable from `rootBody` through string/rod/spring links,
  * stopping at static anchors / ground. Used so setup drags translate a hanging
@@ -128,6 +216,8 @@ export function findHangingBodies(engine, rootBody, opts = {}) {
       if (skip.has(c.id)) continue;
       if (c._ropeLink) continue;
       if (!['string', 'rod', 'spring'].includes(c._newtonType)) continue;
+      // Springs do not rigidly couple setup drags — rest length tracks the drag instead.
+      if (isSpringConstraint(c)) continue;
 
       let other = null;
       if (c.bodyA === cur) other = c.bodyB;
@@ -185,12 +275,16 @@ export function applyHangingChainTranslation(chain, rootBody) {
 }
 
 /**
- * If `draggedBody` is linked by string/rod/spring, returns pivot, radius, and
- * local attach so setup drag can move the bob on a circular arc.
+ * If `draggedBody` is linked by string/rod (or a spring whose other end is an
+ * anchor pivot), returns pivot, radius, and local attach so setup drag can move
+ * the bob on a circular arc.
+ *
+ * All other springs omit arc guidance — the body drags freely while rest length
+ * stays fixed and the coil visually extends or compresses. Ropes use pin / segment drag.
  *
  * Prefers a fixed pivot (world / static anchor) when present — e.g. the upper
  * bob of a double pendulum. Otherwise pivots about the other dynamic body on
- * the link (lower bob arcs about the upper). Change length via the blue
+ * a rod/string link (lower bob arcs about the upper). Change length via the blue
  * end-handle instead.
  *
  * @returns {{
@@ -241,6 +335,12 @@ export function findPendulumGuidance(engine, draggedBody) {
       pivotBody: otherBody ?? null,
     };
 
+    if (c._newtonType === 'spring') {
+      // Spring: arc only when the other end is an anchor pivot; otherwise stretch on drag.
+      if (_isPivotObject(otherBody) && !fixedHit) fixedHit = hit;
+      continue;
+    }
+
     if (_endActsAsFixedPivot(otherBody)) {
       if (!fixedHit) fixedHit = hit;
     } else if (otherBody && otherBody._newtonType !== 'metric-basis' && !dynamicHit) {
@@ -259,13 +359,17 @@ export function findPendulumGuidance(engine, draggedBody) {
 export function setConstraintAnchorWorldPx(c, which, wx, wy) {
   const body = which === 'A' ? c.bodyA : c.bodyB;
   if (!body) return;
-  const dx = wx - body.position.x;
-  const dy = wy - body.position.y;
-  const ca = Math.cos(-body.angle);
-  const sa = Math.sin(-body.angle);
-  const local = { x: ca * dx - sa * dy, y: sa * dx + ca * dy };
-  if (which === 'A') c.pointA = local;
-  else c.pointB = local;
+  const local = worldToBodyLocal(body, wx, wy);
+  if (which === 'A') {
+    if (c._pointALocal) c._pointALocal = { ...local };
+    c.pointA = local;
+  } else {
+    if (c._pointBLocal) c._pointBLocal = { ...local };
+    c.pointB = local;
+  }
+  if (c._newtonType === 'string' && !(typeof c._syncMatterPoints === 'function')) {
+    syncMatterConstraintPoints(c);
+  }
   _syncConstraintAfterAnchorEdit(c);
 }
 
@@ -290,12 +394,19 @@ export function setConstraintEndAttachment(c, which, body, local = { x: 0, y: 0 
   if (!c || !body) return false;
   const other = which === 'A' ? c.bodyB : c.bodyA;
   if (other && other.id === body.id) return false;
+  const loc = { x: local.x ?? 0, y: local.y ?? 0 };
   if (which === 'A') {
     c.bodyA = body;
-    c.pointA = { x: local.x, y: local.y };
+    if (c._pointALocal) c._pointALocal = { ...loc };
+    c.pointA = loc;
   } else {
     c.bodyB = body;
-    c.pointB = { x: local.x, y: local.y };
+    if (c._pointBLocal) c._pointBLocal = { ...loc };
+    c.pointB = loc;
+  }
+  // Legacy Matter strings: keep Matter points in static world-offset form.
+  if (c._newtonType === 'string' && !(typeof c._syncMatterPoints === 'function')) {
+    syncMatterConstraintPoints(c);
   }
   _syncConstraintAfterAnchorEdit(c);
   return true;
@@ -487,6 +598,7 @@ export function replaceGroundFromTopEdge(engine, oldBody, L, R) {
     restitution: oldBody.restitution,
   });
   if (oldBody.label) neo.label = oldBody.label;
+  retargetBodyAttachments(engine, oldBody, neo);
   World.remove(engine.world, oldBody);
   World.add(engine.world, neo);
   return neo;

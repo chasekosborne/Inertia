@@ -59,6 +59,16 @@ const ID = {
 /** Body types that carry an editable v₀ / F. */
 const EDITABLE_TYPES = new Set(['point-mass', 'ball', 'box', 'wedge']);
 
+/** Physics-convention angle (atan2, +y up). Ctrl-snap labels jump in 5° steps. */
+function _formatVectorAngleLabel(angX, angY, snapped) {
+  if (!(angX * angX + angY * angY > 1e-12)) return '0°';
+  let deg = Math.atan2(angY, angX) * 180 / Math.PI;
+  if (snapped) deg = Math.round(deg / SNAP_ANGLE_STEP_5_DEG) * SNAP_ANGLE_STEP_5_DEG;
+  let disp = ((deg + 180) % 360 + 360) % 360 - 180;
+  if (Math.abs(disp) < 1e-9) disp = 0;
+  return snapped ? `${disp.toFixed(0)}°` : `${disp.toFixed(1)}°`;
+}
+
 export class VectorHandle {
   /** @param {import('./editor-context.js').EditorContext} context */
   constructor(context) {
@@ -521,11 +531,7 @@ export class VectorHandle {
     }
     if (angleLabel) {
       if (showAngle) {
-        const degNum = Math.atan2(angY, angX) * 180 / Math.PI;
-        const deg = this._angleSnap ? degNum.toFixed(0) : degNum.toFixed(1);
-        angleLabel.textContent = this._angleSnap
-          ? `${deg}° (${SNAP_ANGLE_STEP_5_DEG}° snap)`
-          : `${deg}°`;
+        angleLabel.textContent = _formatVectorAngleLabel(angX, angY, this._angleSnap);
         const mx = (bx + tipX) / 2;
         const my = (by + tipY) / 2;
         const nx = -(tipY - by) / shaftLen;

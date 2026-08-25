@@ -99,7 +99,7 @@ export function resolveMathToken(raw) {
 }
 
 /**
- * Strip optional `$...$` wrappers used in LaTeX-ish label entry.
+ * Strip optional `$...$` / `\( ... \)` wrappers used in LaTeX-ish label entry.
  * @param {string} label
  */
 function unwrapMathDelimiters(label) {
@@ -107,7 +107,45 @@ function unwrapMathDelimiters(label) {
   if (s.length >= 2 && s.startsWith('$') && s.endsWith('$')) {
     s = s.slice(1, -1).trim();
   }
+  if (s.length >= 4 && s.startsWith('\\(') && s.endsWith('\\)')) {
+    s = s.slice(2, -2).trim();
+  }
   return s;
+}
+
+/**
+ * Parse `base_sub`, `base_{sub}`, `\theta_0`, `$x_0$`, etc.
+ * @param {string} label
+ * @returns {{ base: string, sub: string|null }}
+ */
+export function parseMathLabel(label) {
+  const s = unwrapMathDelimiters(String(label ?? '').trim());
+  if (!s) return { base: '', sub: null };
+  const brace = /^(.+?)_\{([^}]+)\}$/.exec(s);
+  if (brace) return { base: brace[1], sub: brace[2] };
+  const us = s.indexOf('_');
+  if (us > 0) return { base: s.slice(0, us), sub: s.slice(us + 1) };
+  return { base: s, sub: null };
+}
+
+function _escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * HTML for object-browser / panel previews (`theta_0` → italic θ with subscript 0).
+ * @param {string} label
+ */
+export function formatMathLabelHtml(label) {
+  const { base, sub } = parseMathLabel(label);
+  if (!base && !sub) return '';
+  const baseText = _escapeHtml(resolveMathToken(base));
+  if (sub == null || sub === '') return mathHtml(baseText);
+  return mathHtml(`${baseText}<sub>${_escapeHtml(resolveMathToken(sub))}</sub>`);
 }
 
 /**
@@ -116,28 +154,22 @@ function unwrapMathDelimiters(label) {
  * @param {string} label
  */
 function appendSvgMathLabel(textEl, label) {
-  const s = unwrapMathDelimiters(label);
-  const us = s.indexOf('_');
-  const baseRaw = us > 0 ? s.slice(0, us) : s;
-  const subRaw = us > 0 ? s.slice(us + 1) : null;
-
-  textEl.appendChild(document.createTextNode(resolveMathToken(baseRaw)));
-
-  if (subRaw != null && subRaw !== '') {
+  const { base, sub } = parseMathLabel(label);
+  textEl.appendChild(document.createTextNode(resolveMathToken(base)));
+  if (sub != null && sub !== '') {
     const tspan = document.createElementNS(SVG_NS, 'tspan');
-    // Relative shift: works in Chromium / Firefox / Safari (unlike baseline-shift alone).
     tspan.setAttribute('dy', '0.4em');
     tspan.setAttribute('font-size', '70%');
-    tspan.textContent = resolveMathToken(subRaw);
+    tspan.textContent = resolveMathToken(sub);
     textEl.appendChild(tspan);
   }
 }
 
 /**
  * Fill an SVG 〈text〉 with math-ish notation:
- * - `base_sub` → base with a real subscript via 〈tspan dy〉 (e.g. `theta_0` → θ₀)
+ * - `base_sub` / `base_{sub}` → subscript (e.g. `theta_0`, `\theta_{0}` → θ₀)
  * - Greek / LaTeX names (`theta`, `\omega`, `ell`) map to Unicode
- * - Labels without `_` still get Greek-name resolution (`theta` → θ)
+ * - Optional `$...$` or `\( ... \)` wrappers
  *
  * Prefer `dy` over `baseline-shift` for cross-browser SVG subscripts.
  *

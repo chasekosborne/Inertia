@@ -27,6 +27,7 @@ import Matter from 'matter-js';
 import { isRoundBody } from './bodies.js';
 import { appliedForceMatterComponents } from './applied-force.js';
 import { circleContact } from './circle-contact.js';
+import { areConstraintLinked } from './layout-anchors.js';
 import { BASE_DELTA_MS } from '../units.js';
 
 const { Body, Collision } = Matter;
@@ -185,9 +186,10 @@ function recordFrictionVis(body, tx, ty, kinetic, cos, muK, muS, F_load_t, P) {
  * Post-collision Coulomb friction (call from engine `afterUpdate`).
  * @param {import('matter-js').Body[]} bodies
  * @param {{ x:number, y:number, scale:number }} gravity
+ * @param {object[]} [constraints]  Rod/string pairs skip mutual friction
  * @returns {boolean} whether any frictional impulse / stick was applied
  */
-export function applyCoulombFriction(bodies, gravity) {
+export function applyCoulombFriction(bodies, gravity, constraints = []) {
   const gx = gravity?.x ?? 0;
   const gy = gravity?.y ?? 0;
   const gMag = Math.hypot(gx, gy);
@@ -213,6 +215,8 @@ export function applyCoulombFriction(bodies, gravity) {
       const A = list[i];
       const B = list[j];
       if (A.isStatic && B.isStatic) continue;
+      // Rod/string ends: contact is suppressed — do not apply Coulomb either.
+      if (areConstraintLinked(A, B, constraints)) continue;
       // Kinematic rope nodes (pinned / two-host chord): do not friction the host.
       if ((A._ropeSegment && A.collisionFilter?.mask === 0)
         || (B._ropeSegment && B.collisionFilter?.mask === 0)) continue;

@@ -4,7 +4,7 @@
  * This is a facade. The per-object behaviour lives in `edit/`:
  *
  *   constraint-handles  rod / string / spring ends — stretch or reattach
- *   rope-handles        rope ends — reattach, or detach into empty space
+ *   rope-handles        rope ends — move chain, reattach, or join another rope
  *   ground-handles      ground top corners — lay the segment
  *
  * Everything those three share is owned here: the handle `<g>`, the build key

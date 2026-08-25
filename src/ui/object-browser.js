@@ -11,6 +11,7 @@ import {
 } from '../scene/aggregates.js';
 import { renameRope } from '../physics/rope.js';
 import { measurementVectorParent, measurementDisplayLabel } from './measure-eval.js';
+import { formatMathLabelHtml } from '../math-text.js';
 
 function _escapeHtml(s) {
   return String(s)
@@ -44,6 +45,7 @@ export class ObjectBrowser {
     this._onRenameConstraint = hooks.onRenameConstraint ?? null;
     this._onRenameAggregate = hooks.onRenameAggregate ?? null;
     this._onRenameRope = hooks.onRenameRope ?? null;
+    this._onRenameLabel = hooks.onRenameLabel ?? null;
     this._onAggregateChange = hooks.onAggregateChange ?? null;
     /** @type {object|null} */
     this._selection = null;
@@ -145,13 +147,14 @@ export class ObjectBrowser {
 
     for (const l of labels) {
       if (!l?.id) continue;
+      const hostLabel = l.hostBodyLabel ?? l.body ?? null;
       const node = {
         kind: 'label',
         id: l.id,
         name: typeof l.text === 'string' ? l.text : l.id,
-        type: l.body ? 'inline' : (l.point ? 'callout' : 'label'),
+        type: l.type ?? (l.body ? 'inline' : (l.point ? 'callout' : 'label')),
         icon: 'meta',
-        parentBodyLabel: typeof l.body === 'string' ? l.body : null,
+        parentBodyLabel: typeof hostLabel === 'string' ? hostLabel : null,
       };
 
       if (node.parentBodyLabel) {
@@ -246,6 +249,15 @@ export class ObjectBrowser {
       || node.kind === 'weld';
     const droppable = node.kind === 'body' || node.kind === 'aggregate' || node.kind === 'weld';
 
+    const renameAttrs = renameKind === 'label'
+      ? `data-rename="label" data-label-id="${_escapeHtml(String(node.id ?? ''))}" data-raw-name="${_escapeHtml(node.name ?? '')}"`
+      : renameKind
+        ? `data-rename="${renameKind}" data-id="${node.id ?? ''}" data-agg-id="${node.aggId ?? ''}" data-rope-id="${_escapeHtml(node.ropeId ?? '')}"`
+        : '';
+    const nameHtml = node.kind === 'label'
+      ? formatMathLabelHtml(node.name)
+      : _escapeHtml(node.name);
+
     const attrs = this._dataAttrs(node, key);
     const kids = hasKids
       ? `<div class="ob-children" ${open ? '' : 'hidden'}>${
@@ -264,7 +276,7 @@ export class ObjectBrowser {
           ${twist}
           <span class="ob-icon" aria-hidden="true">${icon}</span>
           <button type="button" class="ob-row-main">
-            <span class="ob-name" ${renameKind ? `data-rename="${renameKind}" data-id="${node.id ?? ''}" data-agg-id="${node.aggId ?? ''}" data-rope-id="${_escapeHtml(node.ropeId ?? '')}"` : ''}>${_escapeHtml(node.name)}</span>
+            <span class="ob-name" ${renameAttrs}>${nameHtml}</span>
             <span class="ob-meta">${_escapeHtml(node.type ?? '')}</span>
           </button>
         </div>
@@ -277,6 +289,7 @@ export class ObjectBrowser {
     if (node.kind === 'constraint') return 'constraint';
     if (node.kind === 'aggregate') return 'aggregate';
     if (node.kind === 'rope') return 'rope';
+    if (node.kind === 'label') return 'label';
     return '';
   }
 
@@ -489,10 +502,44 @@ export class ObjectBrowser {
 
   _beginRename(nameEl) {
     const kind = nameEl.getAttribute('data-rename');
+    if (!kind) return;
+
+    if (kind === 'label') {
+      const labelId = nameEl.getAttribute('data-label-id');
+      if (!labelId) return;
+      const prev = nameEl.getAttribute('data-raw-name') ?? nameEl.textContent ?? '';
+      const input = document.createElement('input');
+      input.className = 'ob-rename';
+      input.value = prev;
+      input.placeholder = 'e.g. theta_0, \\theta_{0}, $x$';
+      input.title = 'LaTeX-style: theta_0, \\omega, Greek names, $...$ wrappers';
+      nameEl.replaceWith(input);
+      input.focus();
+      input.select();
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        done = true;
+        const next = input.value.trim() || prev;
+        this._beforeChange();
+        this._onRenameLabel?.(labelId, next);
+        this.refresh();
+      };
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          done = true;
+          this.refresh();
+        }
+      });
+      input.addEventListener('blur', commit);
+      return;
+    }
+
     const id = parseInt(nameEl.getAttribute('data-id'), 10);
     const aggId = nameEl.getAttribute('data-agg-id');
     const ropeId = nameEl.getAttribute('data-rope-id');
-    if (!kind) return;
     if (kind === 'rope' && !ropeId) return;
     if (kind === 'aggregate' && !aggId) return;
     if (kind !== 'aggregate' && kind !== 'rope' && !Number.isFinite(id)) return;

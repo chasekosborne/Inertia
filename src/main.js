@@ -256,6 +256,14 @@ const labels = new LabelManager({
       objectBrowser?.scheduleRefresh();
     }
   },
+  onPickModeChange: () => {
+    if (labels.isPicking()) {
+      statusMode.innerHTML = 'Mode: <strong>Pick label attach (Esc to cancel)</strong>';
+    } else if (_currentSelection?.type === 'label') {
+      props?.show(_currentSelection);
+      objectBrowser?.scheduleRefresh();
+    }
+  },
 });
 
 // Scene measurement overlays are created early so renderLoop / selection can use them.
@@ -275,6 +283,11 @@ const measurements = new MeasurementManager({
     objectBrowser?.setSelection(sel);
     objectBrowser?.scheduleRefresh();
   },
+});
+
+labels.setAnchorHelpers({
+  pickAnchor: (pt, snap) => measurements._pickAnchor(pt, snap),
+  resolveAnchor: (a) => measurements.resolve(a),
 });
 
 /** Current scene identity: Reset baseline, source, and the file operations. */
@@ -298,12 +311,22 @@ function _pushHistory() {
 
 /*
  * Wrap an engine mutating method so it automatically records an undo snapshot
- * (in setup mode) before every structural change.
-*/
+ * (in setup mode) before every structural change. Rope nodes and links are
+ * skipped: a rope is one undo step (the caller snapshots once before the
+ * whole create / rebuild / delete).
+ */
+function _isRopeHistoryUnit(name, args) {
+  const obj = args[0];
+  if (!obj) return false;
+  if (name === 'addBody' || name === 'removeBody') return !!obj._ropeSegment;
+  if (name === 'addConstraint' || name === 'removeConstraint') return !!obj._ropeLink;
+  return false;
+}
+
 function _wrapEngineMethod(name) {
   const orig = engine[name].bind(engine);
   engine[name] = (...args) => {
-    _pushHistory();
+    if (!_isRopeHistoryUnit(name, args)) _pushHistory();
     orig(...args);
   };
 }
@@ -399,7 +422,7 @@ const objectBrowser = new ObjectBrowser(obContent, engine, {
   onSelect: (sel) => _onSandboxSelect(sel),
   beforeChange: () => _pushHistory(),
   listMeasurements: () => measurements.toScene(),
-  listLabels: () => labels.toScene(),
+  listLabels: () => labels.listForBrowser(),
   onRenameBody: (id, name) => {
     const body = engine.bodies.find(b => b.id === id);
     if (body) body.label = name;
@@ -407,6 +430,12 @@ const objectBrowser = new ObjectBrowser(obContent, engine, {
   onRenameConstraint: (id, name) => {
     const c = engine.constraints.find(x => x.id === id);
     if (c) c.label = name;
+  },
+  onRenameLabel: (id, text) => {
+    labels.setText(id, text);
+    if (_currentSelection?.type === 'label' && _currentSelection.id === id) {
+      props?.show({ type: 'label', id });
+    }
   },
   onAggregateChange: () => objectBrowser.scheduleRefresh(),
 });
@@ -582,7 +611,7 @@ bindShortcuts([
   // ── Selection ──
   // Escape cancels an in-progress draft first; only if there is none does it
   // fall through to closing the menus.
-  { code: 'Escape', run: () => measurements.cancelDraft() || labels.cancelDraft() },
+  { code: 'Escape', run: () => measurements.cancelDraft() || labels.cancelPick() || labels.cancelDraft() },
   { code: 'Escape', run: () => { _closeSettings(); _closePresetMenu(); } },
   { code: 'Delete', run: () => _deleteSelection() },
 ]);
@@ -906,6 +935,7 @@ function _deleteSelection() {
 
 /** Remove every segment of a rope and clear the selection. */
 function _removeRopeById(ropeId) {
+  _pushHistory();
   const ids = engine.bodies.filter(b => b._ropeId === ropeId).map(b => b.id);
   removeRope(engine, ropeId);
   for (const id of ids) interaction.notifyBodyRemoved(id);

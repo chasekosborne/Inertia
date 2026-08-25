@@ -22,7 +22,7 @@ export const SCENE_VERSION = 1;
  * @property {SceneConstraint[]} constraints
  * @property {object[]} [measurements]  Length / angle overlays (see MeasurementManager).
  *   Lengths may set `component`: 'distance' | 'dx' | 'dy' | 'manhattan'.
- * @property {object[]} [labels]  Text labels: inline on bodies or callouts to a point.
+ * @property {object[]} [labels]  Inline on bodies, callouts to world points or anchored targets.
  * @property {{ id: string, name: string, members: string[] }[]} [uiAggregates]
  */
 

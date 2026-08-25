@@ -6,7 +6,8 @@ import {
   DEFAULT_BOX_SIZE_M,
 } from '../units.js';
 import { COLORS } from '../theme.js';
-import { snapWorldCoord } from '../grid.js';
+import { snapWorldCoord, GRID_CELL_PX } from '../grid.js';
+import { matterPointFromLocal } from './constraints.js';
 
 /** Hull sides for dynamic disks. Matter.Bodies.circle caps sides at pixel radius. */
 export const CIRCLE_HULL_SIDES = 32;
@@ -809,11 +810,26 @@ export function createAnchor(x, y) {
   return body;
 }
 
-/** Visual pivot geometry (matches svg-renderer `_drawAnchor`). */
+/**
+ * Visual pivot: equilateral inverted triangle, hinge at the body origin.
+ * The stroked outline fits inside a {@link ANCHOR_TRI_BOX_PX} square
+ * (2.5 minor cells) so it stays inside the grid around a snapped centre.
+ */
 export const ANCHOR_PIVOT_R = 4;
-export const ANCHOR_TRI_SIZE = 14;
-export const ANCHOR_TRI_HEIGHT = ANCHOR_TRI_SIZE * 1.4;
-export const ANCHOR_HIT_R = 18;
+export const ANCHOR_TRI_BOX_PX = GRID_CELL_PX * 2.5;
+export const ANCHOR_STROKE_PX = 2;
+const ANCHOR_TRI_SIDE = ANCHOR_TRI_BOX_PX - ANCHOR_STROKE_PX;
+export const ANCHOR_TRI_HALF_W = ANCHOR_TRI_SIDE / 2;
+export const ANCHOR_TRI_SIZE = ANCHOR_TRI_HALF_W;
+export const ANCHOR_TRI_HEIGHT = ANCHOR_TRI_SIDE * Math.sqrt(3) / 2;
+export const ANCHOR_HIT_R = Math.hypot(ANCHOR_TRI_HALF_W, ANCHOR_TRI_HEIGHT) + ANCHOR_STROKE_PX / 2;
+
+/** Local-space triangle verts (apex at origin, base in −y). */
+export function anchorTriangleLocalVerts() {
+  const hw = ANCHOR_TRI_HALF_W;
+  const h = ANCHOR_TRI_HEIGHT;
+  return { apex: { x: 0, y: 0 }, left: { x: -hw, y: -h }, right: { x: hw, y: -h } };
+}
 
 function _pointInTri(px, py, x0, y0, x1, y1, x2, y2) {
   const d1 = (px - x1) * (y0 - y1) - (x0 - x1) * (py - y1);
@@ -834,10 +850,8 @@ export function anchorContainsWorldPoint(body, wx, wy) {
   const lx = dx * c - dy * s;
   const ly = dx * s + dy * c;
   if (lx * lx + ly * ly <= ANCHOR_HIT_R * ANCHOR_HIT_R) return true;
-  const r = ANCHOR_PIVOT_R;
-  const size = ANCHOR_TRI_SIZE;
-  const triH = ANCHOR_TRI_HEIGHT;
-  return _pointInTri(lx, ly, 0, -r, -size, -r - triH, size, -r - triH);
+  const { apex, left, right } = anchorTriangleLocalVerts();
+  return _pointInTri(lx, ly, apex.x, apex.y, left.x, left.y, right.x, right.y);
 }
 
 /**
@@ -891,17 +905,21 @@ export function createGround(x, y, width = 400, height = 20, opts = {}) {
  * damping=0 (ideal inextensible string approximation).
  */
 export function createString(bodyA, bodyB, opts = {}) {
+  const localA = { ...(opts.pointA ?? { x: 0, y: 0 }) };
+  const localB = { ...(opts.pointB ?? { x: 0, y: 0 }) };
   const c = Constraint.create({
     bodyA,
     bodyB,
-    pointA: opts.pointA ?? { x: 0, y: 0 },
-    pointB: opts.pointB ?? { x: 0, y: 0 },
+    pointA: matterPointFromLocal(bodyA, localA),
+    pointB: matterPointFromLocal(bodyB, localB),
     length:    opts.length    ?? undefined,   // auto from current positions
     stiffness: opts.stiffness ?? 0.9,
     damping:   opts.damping   ?? 0.01,
     label: `string_${nextId()}`,
   });
   c._newtonType = 'string';
+  c._pointALocal = localA;
+  c._pointBLocal = localB;
   return c;
 }
 

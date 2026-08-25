@@ -18,8 +18,24 @@ const { Body } = Matter;
 /** Negative group ⇒ same-group pairs never collide (Matter.js). */
 export const ROPE_COLLISION_GROUP = -7;
 
-/** Node diameter / stroke thickness (m). */
+/** Node diameter / stroke thickness (m). Shown as 0.050 in the properties panel. */
 export const ROPE_THICKNESS_M = 0.05;
+
+/**
+ * SVG stroke width (px) from rope node radii, or the default thickness.
+ * Skips host bodies on pinned ends (they are not rope nodes).
+ *
+ * @param {import('matter-js').Body[]|object[]} [items]  Rope nodes or PBD links
+ */
+export function ropeStrokeWidthPx(items = []) {
+  for (const item of items) {
+    const a = item.bodyA ?? item;
+    const b = item.bodyB;
+    if (a?._ropeSegment && a._radius > 0) return Math.max(2, 2 * a._radius);
+    if (b?._ropeSegment && b._radius > 0) return Math.max(2, 2 * b._radius);
+  }
+  return Math.max(2, mToPx(ROPE_THICKNESS_M));
+}
 
 /** Minimum / maximum stroke pieces (= nodes − 1). */
 export const ROPE_MIN_SEGMENTS = 2;
@@ -369,6 +385,125 @@ export function getRopeEndAttachment(engine, ropeId, which) {
 }
 
 /**
+ * Nearest rope end under the cursor (for joining chains).
+ *
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {number} wx
+ * @param {number} wy
+ * @param {object} [opts]
+ * @param {number} [opts.hitPx=32]
+ * @param {string|null} [opts.excludeRopeId]  Skip this rope (usually the one being dragged)
+ * @returns {{ ropeId: string, which: 'A'|'B', node: object, world: {x:number,y:number} }|null}
+ */
+export function findRopeEndTarget(engine, wx, wy, opts = {}) {
+  const hitPx = opts.hitPx ?? 32;
+  const excludeRopeId = opts.excludeRopeId ?? null;
+  let best = null;
+  let bestD = hitPx;
+  const seen = new Set();
+  for (const b of engine.bodies ?? []) {
+    if (!b._ropeSegment || !b._ropeId || seen.has(b._ropeId)) continue;
+    seen.add(b._ropeId);
+    if (excludeRopeId != null && b._ropeId === excludeRopeId) continue;
+    for (const which of /** @type {const} */ (['A', 'B'])) {
+      const node = ropeEndNode(engine, b._ropeId, which);
+      if (!node) continue;
+      const d = Math.hypot(wx - node.position.x, wy - node.position.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = {
+          ropeId: b._ropeId,
+          which,
+          node,
+          world: { x: node.position.x, y: node.position.y },
+        };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Join two ropes at the given ends into one chain. Keeps `ropeIdA`'s id / name.
+ * Far-end body attachments are preserved. Returns the merged rope or null.
+ *
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {string} ropeIdA
+ * @param {'A'|'B'} whichA  End of A that meets B
+ * @param {string} ropeIdB
+ * @param {'A'|'B'} whichB  End of B that meets A
+ * @returns {{ bodies: object[], constraints: object[], ropeId: string }|null}
+ */
+export function mergeRopesAtEnds(engine, ropeIdA, whichA, ropeIdB, whichB) {
+  if (!ropeIdA || !ropeIdB || ropeIdA === ropeIdB) return null;
+  if ((whichA !== 'A' && whichA !== 'B') || (whichB !== 'A' && whichB !== 'B')) return null;
+
+  const nodesA = listRopeSegments(engine, ropeIdA);
+  const nodesB = listRopeSegments(engine, ropeIdB);
+  if (nodesA.length < 2 || nodesB.length < 2) return null;
+
+  let ptsA = ropeCenterlineWorldPx(nodesA);
+  let ptsB = ropeCenterlineWorldPx(nodesB);
+  // Orient so whichA is the last point of A and whichB is the first of B.
+  if (whichA === 'A') ptsA = ptsA.slice().reverse();
+  if (whichB === 'B') ptsB = ptsB.slice().reverse();
+
+  const jx = (ptsA[ptsA.length - 1].x + ptsB[0].x) / 2;
+  const jy = (ptsA[ptsA.length - 1].y + ptsB[0].y) / 2;
+  let pts = [
+    ...ptsA.slice(0, -1),
+    { x: jx, y: jy },
+    ...ptsB.slice(1),
+  ];
+  if (pts.length < 2) return null;
+
+  const farA = whichA === 'A' ? 'B' : 'A';
+  const farB = whichB === 'A' ? 'B' : 'A';
+  const attachStart = _cloneHost(getRopeEndAttachment(engine, ropeIdA, farA));
+  const attachEnd = _cloneHost(getRopeEndAttachment(engine, ropeIdB, farB));
+  // Same host on both far ends is illegal for a single rope.
+  if (attachStart?.body && attachEnd?.body
+    && (attachStart.body === attachEnd.body || attachStart.body.id === attachEnd.body.id)) {
+    return null;
+  }
+
+  const restA = nodesA.find(n => n._ropeRestLength > 0)?._ropeRestLength
+    ?? _polylineLength(ptsA);
+  const restB = nodesB.find(n => n._ropeRestLength > 0)?._ropeRestLength
+    ?? _polylineLength(ptsB);
+  const totalMass = nodesA.reduce((m, s) => m + (s.mass || 0), 0)
+    + nodesB.reduce((m, s) => m + (s.mass || 0), 0);
+  const thicknessM = pxToM(2 * (nodesA[0]._radius ?? nodesA[0].circleRadius
+    ?? mToPx(ROPE_THICKNESS_M) / 2));
+  const muK = nodesA[0]._muK ?? 0;
+  const muS = nodesA[0]._muS ?? 0;
+  const ropeName = nodesA[0]?._ropeName ?? nodesB[0]?._ropeName ?? 'Rope';
+
+  const maxNodes = ROPE_MAX_SEGMENTS + 1;
+  const exactNodes = pts.length <= maxNodes;
+  if (!exactNodes) {
+    pts = _resamplePolyline(pts, maxNodes);
+  }
+
+  removeRope(engine, ropeIdB);
+  removeRope(engine, ropeIdA);
+  return createFreeRope(engine, pts, {
+    exactNodes,
+    segments: Math.max(ROPE_MIN_SEGMENTS, pts.length - 1),
+    totalMass: Math.max(0.05, totalMass),
+    thicknessM,
+    muK,
+    muS,
+    ropeId: ropeIdA,
+    idPrefix: ropeIdA,
+    ropeName,
+    attachA: attachStart,
+    attachB: attachEnd,
+    restLengthPx: restA + restB,
+  });
+}
+
+/**
  * Pin or unpin a rope end to a body (constraint-like). `body` null = free end.
  * Both ends may not share the same body. Rope nodes are not valid hosts.
  *
@@ -656,6 +791,90 @@ function _tagRopeNode(node, ropeId, index, segmentCount, prefix, ropeName = 'Rop
   node._lockRotation = true;
   Body.setInertia(node, Infinity);
   Body.setAngularVelocity(node, 0);
+}
+
+/**
+ * Rest length of a rope in world px.
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {string} ropeId
+ */
+export function ropeRestLengthPx(engine, ropeId) {
+  return _ropeRestPx(engine, ropeId, _ropeLinksSorted(engine, ropeId));
+}
+
+/**
+ * Setup-time inextensible projection: bilateral link lengths, hosts frozen.
+ * Call after editor moves so the chain cannot be left stretched.
+ *
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {string} ropeId
+ * @param {object} [opts]
+ * @param {number} [opts.iterations]
+ */
+export function enforceRopeLength(engine, ropeId, opts = {}) {
+  if (!engine || !ropeId) return;
+  const links = _ropeLinksSorted(engine, ropeId);
+  if (!links.length) return;
+  snapRopePins(engine);
+
+  const twoHost = _isTwoHostGroup(engine, links);
+  if (twoHost) _seedSlackSag(engine, links);
+
+  const iters = Math.max(1, opts.iterations ?? ROPE_PBD_ITERS);
+  const n = links.length;
+  for (let k = 0; k < iters; k++) {
+    const fwd = (k % 2) === 0;
+    for (let i = 0; i < n; i++) {
+      // Bilateral + freeze hosts: rope nodes move, pins stay put.
+      _projectRopeLink(links[fwd ? i : n - 1 - i], false, true);
+    }
+  }
+  snapRopePins(engine);
+  for (const node of listRopeSegments(engine, ropeId)) {
+    Body.setVelocity(node, { x: 0, y: 0 });
+    Body.setAngularVelocity(node, 0);
+    node.force.x = 0;
+    node.force.y = 0;
+    node.torque = 0;
+  }
+}
+
+/**
+ * World pivot for the end opposite `which` (host attach point, or free node).
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {string} ropeId
+ * @param {'A'|'B'} which
+ */
+export function ropeOtherEndPivot(engine, ropeId, which) {
+  const other = ropeEndNode(engine, ropeId, which === 'A' ? 'B' : 'A');
+  if (!other) return null;
+  const host = other._ropeHost;
+  if (host?.body) return _attachWorld(host.body, host.local);
+  return { x: other.position.x, y: other.position.y };
+}
+
+/**
+ * Clamp a desired tip position so the chord from the other end ≤ rest length.
+ * @returns {{ x: number, y: number, clamped: boolean }}
+ */
+export function clampRopeTipToRest(engine, ropeId, which, wx, wy) {
+  const pivot = ropeOtherEndPivot(engine, ropeId, which);
+  const rest = ropeRestLengthPx(engine, ropeId);
+  if (!pivot || !(rest > 0)) return { x: wx, y: wy, clamped: false };
+  const dx = wx - pivot.x;
+  const dy = wy - pivot.y;
+  const dist = Math.hypot(dx, dy);
+  if (!(dist > rest + 1e-6)) return { x: wx, y: wy, clamped: false };
+  const s = rest / dist;
+  return { x: pivot.x + dx * s, y: pivot.y + dy * s, clamped: true };
+}
+
+/**
+ * True when the end opposite `which` is pinned to a body.
+ */
+export function ropeOtherEndPinned(engine, ropeId, which) {
+  const other = ropeEndNode(engine, ropeId, which === 'A' ? 'B' : 'A');
+  return !!other?._ropeHost?.body;
 }
 
 /**

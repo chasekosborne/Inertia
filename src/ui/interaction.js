@@ -2,9 +2,10 @@
  * Interaction handler: manages tool modes and pointer events on the SVG canvas.
  *
  * Modes:
- *   select         : drag bodies, string/rod/spring bobs arc at fixed length
- *                     (Ctrl → 5°), hanging chains (e.g. double pendulum) translate
- *                     with the dragged mass so lower link lengths stay fixed,
+ *   select         : drag bodies; rod/string bobs arc at fixed length (Ctrl → 5°);
+ *                     springs pinned to an anchor pivot arc at rest length; all other
+ *                     springs stretch/compress visually while rest length stays fixed;
+ *                     hanging chains (e.g. double pendulum) translate with the dragged mass,
  *                     with constraint selected, drag its line to translate attached
  *                     non-static bodies together
  *   rotate         : drag a body around its centre to set angle (Ctrl → 5°)
@@ -14,7 +15,8 @@
  *   anchor         : drag from palette; rotate tool spins the triangle about the pivot
  *   ground         : pointer down sets start (anywhere on canvas), drag shows a
  *                     segment preview like a constraint, release to place, Ctrl = 5° steps
- *   rope           : click-drag to place, drop on a body to attach that end
+ *   rope           : click-drag to place, drop on a body to attach that end,
+ *                     or on another rope end to join the chains
  *                     (standalone if both ends are in empty space)
  *   string|rod|spring: drag from body A to body B
  *   pan            : click-drag pans the camera
@@ -28,7 +30,8 @@ import { createPointMass, createBall, createBox, createWedge, createAnchor, crea
 import { createRod, createSpring } from '../physics/constraints.js';
 import {
   createFreeRope, ropeSegmentCountForLength, ropeSelection, listRopeSegments, clampRopeSegments,
-  snapRopePins,
+  snapRopePins, ROPE_THICKNESS_M, ropeStrokeWidthPx, findRopeEndTarget, mergeRopesAtEnds,
+  enforceRopeLength,
 } from '../physics/rope.js';
 import {
   findPendulumGuidance,
@@ -292,7 +295,8 @@ export class InteractionHandler {
 
   /**
    * Bodies hit-tested in draw order: dynamics first so they beat wide statics
-   * (e.g. ground) underneath.
+   * (e.g. ground) underneath. Rope nodes are skipped — pick those via
+   * `_ropeHitAt` so solid objects win when both overlap.
    * @returns {{ body: import('matter-js').Body, partIndex: number|null }|null}
    */
   _bodyPartAt(pt) {
@@ -307,6 +311,7 @@ export class InteractionHandler {
       ...this.engine.bodies.filter(b => b.isStatic && b._newtonType !== 'metric-basis'),
     ];
     for (const b of candidates) {
+      if (b._ropeSegment) continue;
       if (b._newtonType === 'compound' && b.parts?.length > 1) {
         for (let j = 1; j < b.parts.length; j++) {
           const part = b.parts[j];
@@ -341,13 +346,26 @@ export class InteractionHandler {
   /**
    * Rope id under the pointer (node or stroke), or null.
    * @param {{ x: number, y: number }} pt
+   * @param {number} [hitPx=22]
    */
-  _ropeHitAt(pt) {
-    const body = this._bodyAt(pt);
-    if (body?._ropeSegment && body._ropeId) return body._ropeId;
-    const c = this._constraintAt(pt, 22);
-    if (c?._ropeLink) return c._ropeId ?? c.bodyA?._ropeId ?? c.bodyB?._ropeId ?? null;
-    return null;
+  _ropeHitAt(pt, hitPx = 22) {
+    for (const b of this.engine.bodies) {
+      if (!b._ropeSegment || !b._ropeId) continue;
+      if (this._bodyHitsPoint(b, pt)) return b._ropeId;
+    }
+    let bestId = null;
+    let bestD = hitPx;
+    for (const c of this.engine.constraints) {
+      if (!c._ropeLink) continue;
+      const a = constraintAnchorWorld(c, 'A');
+      const b = constraintAnchorWorld(c, 'B');
+      const d = this._distToSeg(pt, a, b);
+      if (d <= bestD) {
+        bestD = d;
+        bestId = c._ropeId ?? c.bodyA?._ropeId ?? c.bodyB?._ropeId ?? null;
+      }
+    }
+    return bestId;
   }
 
   /**
@@ -360,12 +378,14 @@ export class InteractionHandler {
     if (!sel) return false;
     this._onSelect(sel);
     if (opts.drag && opts.pt && !this.engine.running) {
-      const nodes = listRopeSegments(this.engine, ropeId)
-        .filter(b => !b._ropeHost?.body);
-      if (nodes.length) {
+      const nodes = listRopeSegments(this.engine, ropeId);
+      // Only fully free ropes translate as a rigid chain — a pinned end is a
+      // hard constraint, and moving free nodes alone would stretch the links.
+      if (nodes.length && !nodes.some(b => b._ropeHost?.body)) {
         this.onBeforeDrag?.();
         this._bulkConstraintDrag = {
           ptr0: { ...opts.pt },
+          ropeId,
           origins: nodes.map(b => ({
             body: b,
             ox: b.position.x,
@@ -454,6 +474,7 @@ export class InteractionHandler {
     if (this.labels?.handlePointerDown(pt, {
       mode: this._mode,
       ctrlKey: e.ctrlKey,
+      altKey: e.altKey,
     })) {
       this._ignoreNextClick = true;
       return;
@@ -462,22 +483,45 @@ export class InteractionHandler {
     if (this._mode === 'select') {
       // Physics running: don't drag bodies (spring forces would fight the drag).
       if (this.engine.running) {
-        const ropeId = this._ropeHitAt(pt);
-        if (ropeId) {
-          this._selectRope(ropeId);
-          return;
-        }
-        const hit = this._bodyPartAt(pt);
+        const hitLive = this._bodyPartAt(pt);
         const con = this._constraintAt(pt);
-        if (con && !con._ropeLink && (!hit || this._distToSeg(pt, constraintAnchorWorld(con, 'A'), constraintAnchorWorld(con, 'B')) < 12)) {
+        const ropeId = this._ropeHitAt(pt);
+        if (con && !con._ropeLink && (!hitLive || this._distToSeg(pt, constraintAnchorWorld(con, 'A'), constraintAnchorWorld(con, 'B')) < 12)) {
           this._onSelect({ type: 'constraint', id: con.id });
-        } else if (hit) {
-          this._selectBodyHit(hit);
+        } else if (hitLive) {
+          this._selectBodyHit(hitLive);
+        } else if (ropeId) {
+          this._selectRope(ropeId);
         } else if (this.measurements?.handlePointerDown(pt, { mode: 'select', selectOnly: true })) {
           this._ignoreNextClick = true;
         } else {
           this._onSelect(null);
         }
+        return;
+      }
+
+      // Solid bodies beat ropes when both sit under the cursor.
+      const hitBody = this._bodyPartAt(pt);
+      if (hitBody) {
+        const body = hitBody.body;
+        this.onBeforeDrag?.();
+        this._dragging = body;
+        if (body._newtonType === 'wedge') {
+          const aabb = wedgeAABBCenterWorld(body);
+          this._dragOffX = pt.x - aabb.x;
+          this._dragOffY = pt.y - aabb.y;
+        } else {
+          this._dragOffX = pt.x - body.position.x;
+          this._dragOffY = pt.y - body.position.y;
+        }
+        this._pendulumDrag = findPendulumGuidance(this.engine, body);
+        const skipIds = this._pendulumDrag?.constraintId != null
+          ? [this._pendulumDrag.constraintId]
+          : [];
+        this._hangingChain = captureHangingChain(this.engine, body, {
+          skipConstraintIds: skipIds,
+        });
+        this._selectBodyHit(hitBody);
         return;
       }
 
@@ -548,30 +592,7 @@ export class InteractionHandler {
         }
       }
 
-      const hit = this._bodyPartAt(pt);
-      if (hit) {
-        const body = hit.body;
-        this.onBeforeDrag?.();
-        this._dragging = body;
-        if (body._newtonType === 'wedge') {
-          const aabb = wedgeAABBCenterWorld(body);
-          this._dragOffX = pt.x - aabb.x;
-          this._dragOffY = pt.y - aabb.y;
-        } else {
-          this._dragOffX = pt.x - body.position.x;
-          this._dragOffY = pt.y - body.position.y;
-        }
-        this._pendulumDrag = findPendulumGuidance(this.engine, body);
-        // Descendants ride with this body (skip the parent link so we do not
-        // pull the pivot bob when dragging a lower pendulum mass).
-        const skipIds = this._pendulumDrag?.constraintId != null
-          ? [this._pendulumDrag.constraintId]
-          : [];
-        this._hangingChain = captureHangingChain(this.engine, body, {
-          skipConstraintIds: skipIds,
-        });
-        this._selectBodyHit(hit);
-      } else if (c) {
+      if (c) {
         this._onSelect({ type: 'constraint', id: c.id });
       } else if (this.measurements?.handlePointerDown(pt, { mode: 'select', selectOnly: true })) {
         this._ignoreNextClick = true;
@@ -585,15 +606,14 @@ export class InteractionHandler {
     if (this._mode === 'rotate') {
       if (this.engine.running) {
         const hit = this._bodyPartAt(pt);
-        if (hit?.body?._ropeSegment) this._selectRope(hit.body._ropeId);
-        else if (hit && this._canRotate(hit.body)) this._selectBodyHit(hit);
+        if (hit && this._canRotate(hit.body)) this._selectBodyHit(hit);
+        else {
+          const ropeId = this._ropeHitAt(pt);
+          if (ropeId) this._selectRope(ropeId);
+        }
         return;
       }
       const hit = this._bodyPartAt(pt);
-      if (hit?.body?._ropeSegment) {
-        this._selectRope(hit.body._ropeId);
-        return;
-      }
       if (hit && this._canRotate(hit.body)) {
         const body = hit.body;
         this.onBeforeDrag?.();
@@ -609,15 +629,20 @@ export class InteractionHandler {
           pivot: body._newtonType === 'wedge' ? { ...pivot } : null,
         };
         this._selectBodyHit(hit);
+        return;
       }
+      const ropeId = this._ropeHitAt(pt);
+      if (ropeId) this._selectRope(ropeId);
       return;
     }
 
     if (this._mode === 'scale') {
       const hit = this._bodyPartAt(pt);
-      if (hit?.body?._ropeSegment) this._selectRope(hit.body._ropeId);
-      else if (hit && this._canScale(hit.body)) {
+      if (hit && this._canScale(hit.body)) {
         this._selectBodyHit(hit);
+      } else {
+        const ropeId = this._ropeHitAt(pt);
+        if (ropeId) this._selectRope(ropeId);
       }
       return;
     }
@@ -647,19 +672,19 @@ export class InteractionHandler {
       return;
     }
 
-    // Rope: click-drag, attach an end when the pointer is over a body.
+    // Rope: click-drag; start may pin to a body or join another rope end.
     if (this._mode === 'rope') {
-      const attach = this._ropeAttachTarget(pt);
-      if (attach) {
-        this._ropeStart = { x: attach.world.x, y: attach.world.y, attach };
+      const pick = this._ropePlacementPick(pt);
+      if (pick.join) {
+        this._ropeStart = {
+          x: pick.x, y: pick.y, attach: null, join: pick.join,
+        };
+      } else if (pick.attach) {
+        this._ropeStart = {
+          x: pick.x, y: pick.y, attach: pick.attach, join: null,
+        };
       } else {
-        let x = pt.x;
-        let y = pt.y;
-        if (this._snapEnabled) {
-          x = snapWorldCoord(x, true);
-          y = snapWorldCoord(y, true);
-        }
-        this._ropeStart = { x, y, attach: null };
+        this._ropeStart = { x: pick.x, y: pick.y, attach: null, join: null };
       }
       this._ropeSegOverride = null;
       return;
@@ -689,7 +714,7 @@ export class InteractionHandler {
 
     if (this._bulkConstraintDrag) {
       if (this.engine.running) return;
-      const { ptr0, origins } = this._bulkConstraintDrag;
+      const { ptr0, origins, ropeId } = this._bulkConstraintDrag;
       const dx = pt.x - ptr0.x;
       const dy = pt.y - ptr0.y;
       for (const { body, ox, oy } of origins) {
@@ -700,6 +725,7 @@ export class InteractionHandler {
         body.torque = 0;
       }
       snapRopePins(this.engine);
+      if (ropeId) enforceRopeLength(this.engine, ropeId);
       return;
     }
 
@@ -889,7 +915,7 @@ export class InteractionHandler {
       if (len > 4) {
         const nSeg = this._ropeSegOverride
           ?? ropeSegmentCountForLength(len);
-        this._drawRopeGhost(ax, ay, hover.x, hover.y, nSeg, hover.attach);
+        this._drawRopeGhost(ax, ay, hover.x, hover.y, nSeg, hover.attach, hover.join);
       }
       return;
     }
@@ -1105,11 +1131,12 @@ export class InteractionHandler {
       return;
     }
 
-    // Finish rope placement: attach ends that landed on bodies, otherwise free.
+    // Finish rope placement: attach ends on bodies, or join onto rope ends.
     if (this._ropeStart) {
       const ax = this._ropeStart.x;
       const ay = this._ropeStart.y;
       const startAttach = this._ropeStart.attach ?? null;
+      const startJoin = this._ropeStart.join ?? null;
       const hover = this._ropePreviewEnd(pt, startAttach?.body?.id ?? null);
       this._ropeStart = null;
       const ex = hover.x;
@@ -1120,20 +1147,37 @@ export class InteractionHandler {
         const nSeg = this._ropeSegOverride
           ?? ropeSegmentCountForLength(len);
         this._ropeSegOverride = null;
-        const endAttach = hover.attach
+        const endJoin = hover.join
+          && hover.join.ropeId !== startJoin?.ropeId
+          ? hover.join
+          : null;
+        const endAttach = !endJoin && hover.attach
           && hover.attach.body?.id !== startAttach?.body?.id
           ? hover.attach
           : null;
         const placed = createFreeRope(this.engine, [{ x: ax, y: ay }, { x: ex, y: ey }], {
           segments: nSeg,
           totalMass: Math.max(0.4, pxToM(len) * 0.5),
-          thicknessM: 0.05,
+          thicknessM: ROPE_THICKNESS_M,
           muK: 0,
           muS: 0,
           attachA: startAttach ? { body: startAttach.body, local: startAttach.local } : null,
           attachB: endAttach ? { body: endAttach.body, local: endAttach.local } : null,
         });
-        if (placed.ropeId) this._selectRope(placed.ropeId);
+        let ropeId = placed.ropeId;
+        if (ropeId && startJoin) {
+          const merged = mergeRopesAtEnds(
+            this.engine, startJoin.ropeId, startJoin.which, ropeId, 'A',
+          );
+          if (merged?.ropeId) ropeId = merged.ropeId;
+        }
+        if (ropeId && endJoin) {
+          const merged = mergeRopesAtEnds(
+            this.engine, ropeId, 'B', endJoin.ropeId, endJoin.which,
+          );
+          if (merged?.ropeId) ropeId = merged.ropeId;
+        }
+        if (ropeId) this._selectRope(ropeId);
       }
       this.svg.querySelectorAll('.hover-target').forEach(g => g.classList.remove('hover-target'));
       return;
@@ -1319,42 +1363,71 @@ export class InteractionHandler {
   }
 
   /**
-   * Preview end of a rope stroke: attached world point, or grid-snapped cursor.
-   * @returns {{ x: number, y: number, attach: object|null }}
+   * Placement pick: body pin, rope-end join, or free snapped point.
+   * @returns {{ x: number, y: number, attach: object|null, join: object|null }}
+   */
+  _ropePlacementPick(pt, excludeBodyId = null, excludeRopeId = null) {
+    const join = findRopeEndTarget(this.engine, pt.x, pt.y, {
+      hitPx: 30,
+      excludeRopeId,
+    });
+    const attach = this._ropeAttachTarget(pt, excludeBodyId);
+    if (join && attach) {
+      const dJoin = Math.hypot(pt.x - join.world.x, pt.y - join.world.y);
+      const dBody = Math.hypot(pt.x - attach.world.x, pt.y - attach.world.y);
+      if (dJoin <= dBody) {
+        return { x: join.world.x, y: join.world.y, attach: null, join };
+      }
+      return { x: attach.world.x, y: attach.world.y, attach, join: null };
+    }
+    if (join) return { x: join.world.x, y: join.world.y, attach: null, join };
+    if (attach) return { x: attach.world.x, y: attach.world.y, attach, join: null };
+    let x = pt.x;
+    let y = pt.y;
+    if (this._snapEnabled && this._ropeStart) {
+      const snapped = snapSegmentFromStart(this._ropeStart.x, this._ropeStart.y, x, y, true);
+      x = snapped.x;
+      y = snapped.y;
+    } else if (this._snapEnabled) {
+      x = snapWorldCoord(x, true);
+      y = snapWorldCoord(y, true);
+    }
+    return { x, y, attach: null, join: null };
+  }
+
+  /**
+   * Preview end of a rope stroke: body pin, rope-end join, or grid-snapped cursor.
+   * @returns {{ x: number, y: number, attach: object|null, join: object|null }}
    */
   _ropePreviewEnd(pt, excludeBodyId = null) {
     const exclude = excludeBodyId ?? this._ropeStart?.attach?.body?.id ?? null;
-    const attach = this._ropeAttachTarget(pt, exclude);
+    const excludeRope = this._ropeStart?.join?.ropeId ?? null;
+    const pick = this._ropePlacementPick(pt, exclude, excludeRope);
     this.svg.querySelectorAll('.body-group').forEach(g => {
       const id = parseInt(g.id.replace('body-', ''), 10);
-      g.classList.toggle('hover-target', !!(attach && attach.body.id === id));
+      const hitBody = !!(pick.attach && pick.attach.body.id === id);
+      const hitJoin = !!(pick.join && pick.join.node.id === id);
+      g.classList.toggle('hover-target', hitBody || hitJoin);
     });
-    if (attach) return { x: attach.world.x, y: attach.world.y, attach };
-    let ex = pt.x;
-    let ey = pt.y;
-    if (this._snapEnabled && this._ropeStart) {
-      const snapped = snapSegmentFromStart(this._ropeStart.x, this._ropeStart.y, ex, ey, true);
-      ex = snapped.x;
-      ey = snapped.y;
-    }
-    return { x: ex, y: ey, attach: null };
+    return pick;
   }
 
-  _drawRopeGhost(ax, ay, ex, ey, nSeg, endAttach) {
+  _drawRopeGhost(ax, ay, ex, ey, nSeg, endAttach, endJoin = null) {
+    const thick = ropeStrokeWidthPx();
     this._ghostLayer.appendChild(svgEl('line', {
       x1: ax, y1: ay, x2: ex, y2: ey,
       stroke: COLORS.ink,
-      'stroke-width': 5,
+      'stroke-width': thick,
       'stroke-linecap': 'round',
       opacity: 0.5,
     }));
-    if (this._ropeStart?.attach) {
+    if (this._ropeStart?.attach || this._ropeStart?.join) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ax, cy: ay, r: 5,
         fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
       }));
     }
-    if (endAttach) {
+    if (endAttach || endJoin) {
       this._ghostLayer.appendChild(svgEl('circle', {
         cx: ex, cy: ey, r: 5,
         fill: '#2d70b3', stroke: '#fff', 'stroke-width': 1.5, opacity: 0.95,
@@ -1366,8 +1439,14 @@ export class InteractionHandler {
       'font-size': 11,
       'font-family': FONT_DIAGRAM,
     });
+    const nJoin = (this._ropeStart?.join ? 1 : 0) + (endJoin ? 1 : 0);
     const nAtt = (this._ropeStart?.attach ? 1 : 0) + (endAttach ? 1 : 0);
-    const tag = nAtt === 2 ? 'both ends attached' : nAtt === 1 ? 'one end attached' : 'scroll to change';
+    let tag = 'scroll to change';
+    if (nJoin === 2) tag = 'join both ends';
+    else if (nJoin === 1 && nAtt === 1) tag = 'join + attach';
+    else if (nJoin === 1) tag = 'join rope end';
+    else if (nAtt === 2) tag = 'both ends attached';
+    else if (nAtt === 1) tag = 'one end attached';
     txt.textContent = `rope · ${pxToM(Math.hypot(ex - ax, ey - ay)).toFixed(2)} m · ${nSeg} segments · ${tag}`;
     this._ghostLayer.appendChild(txt);
   }
@@ -1389,7 +1468,7 @@ export class InteractionHandler {
     this._ropeSegOverride = clampRopeSegments(base + step);
     this._clearGhost();
     if (len > 4) {
-      this._drawRopeGhost(ax, ay, hover.x, hover.y, this._ropeSegOverride, hover.attach);
+      this._drawRopeGhost(ax, ay, hover.x, hover.y, this._ropeSegOverride, hover.attach, hover.join);
     }
     return true;
   }

@@ -18,7 +18,8 @@ import {
   getWeightPxPerKg,
 } from '../units.js';
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
-         wedgeVertsCentred, insetPolygonVerts, wedgeOutlineStrokePx } from '../physics/bodies.js';
+         wedgeVertsCentred, insetPolygonVerts, wedgeOutlineStrokePx,
+         ANCHOR_PIVOT_R, ANCHOR_STROKE_PX, anchorTriangleLocalVerts } from '../physics/bodies.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { springPathProps } from '../renderer/spring-path.js';
 
@@ -489,14 +490,13 @@ function _springPath(ax, ay, bx, by, restLen = null) {
 }
 
 function _drawStaticAnchor(g, x, y) {
-  const size = 14;
-  const triH = size * 1.4;
+  const { apex, left, right } = anchorTriangleLocalVerts();
   g.appendChild(el('polygon', {
-    points: `${x},${y} ${x - size},${y - triH} ${x + size},${y - triH}`,
-    fill: 'none', stroke: INK, 'stroke-width': 2,
+    points: `${x + apex.x},${y + apex.y} ${x + left.x},${y + left.y} ${x + right.x},${y + right.y}`,
+    fill: 'none', stroke: INK, 'stroke-width': ANCHOR_STROKE_PX,
   }));
   g.appendChild(el('circle', {
-    cx: x, cy: y, r: 4,
+    cx: x, cy: y, r: ANCHOR_PIVOT_R,
     fill: '#fff', stroke: INK, 'stroke-width': 2,
   }));
 }

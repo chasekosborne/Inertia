@@ -860,6 +860,18 @@ select.prop-value {
 
 .prop-back-btn:hover { text-decoration: underline; }
 
+.prop-action-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface, #fff);
+  color: var(--ink);
+  cursor: pointer;
+}
+.prop-action-btn:hover { background: rgba(44, 51, 69, 0.06); }
+
 .prop-component-list {
   display: flex;
   flex-direction: column;

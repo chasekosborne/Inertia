@@ -134,6 +134,62 @@ describe('simple harmonic oscillator', () => {
   });
 });
 
+describe('rod to angled ground', () => {
+  it('pivots about the top-edge attach point (Matter static offset)', async () => {
+    const { PhysicsEngine } = await import('../src/physics/engine.js');
+    const { createGround, createBall } = await import('../src/physics/bodies.js');
+    const { createRod, constraintAnchorWorld, matterPointFromLocal } = await import('../src/physics/constraints.js');
+    const { groundTopEdgeWorld, worldToBodyLocal } = await import('../src/physics/layout-anchors.js');
+    const { BASE_DELTA_MS } = await import('../src/units.js');
+
+    const engine = new PhysicsEngine();
+    engine.setConserveEnergy(true);
+    engine.engine.gravity.scale = 0.001;
+
+    const ang = Math.PI / 6;
+    const ground = createGround(400, 300, 400, 20, { angle: ang, muK: 0, muS: 0, restitution: 0 });
+    const { L, R } = groundTopEdgeWorld(ground);
+    const attach = { x: (L.x + R.x) / 2, y: (L.y + R.y) / 2 };
+    const local = worldToBodyLocal(ground, attach.x, attach.y);
+    const Lrod = 150;
+    const bob = createBall(attach.x, attach.y + Lrod, {
+      radius: 12, mass: 1, muK: 0, muS: 0, restitution: 0, frictionAir: 0,
+    });
+    bob.frictionAir = 0;
+    const rod = createRod(ground, bob, {
+      pointA: local, pointB: { x: 0, y: 0 }, length: Lrod,
+    });
+
+    // Matter must store the rotated world-offset for the static end.
+    const expectedMatter = matterPointFromLocal(ground, local);
+    expect(rod._matter.pointA.x).toBeCloseTo(expectedMatter.x, 6);
+    expect(rod._matter.pointA.y).toBeCloseTo(expectedMatter.y, 6);
+
+    engine.addBody(ground);
+    engine.addBody(bob);
+    engine.addConstraint(rod);
+
+    // Kick sideways and integrate.
+    const Matter = (await import('matter-js')).default;
+    Matter.Body.setVelocity(bob, { x: 2.5, y: 0 });
+
+    let maxPivotErr = 0;
+    let maxLenErr = 0;
+    const steps = Math.round(2 / (BASE_DELTA_MS / 1000));
+    for (let i = 0; i < steps; i++) {
+      engine.step();
+      const pivot = constraintAnchorWorld(rod, 'A');
+      maxPivotErr = Math.max(maxPivotErr, Math.hypot(pivot.x - attach.x, pivot.y - attach.y));
+      const tip = constraintAnchorWorld(rod, 'B');
+      const len = Math.hypot(tip.x - pivot.x, tip.y - pivot.y);
+      maxLenErr = Math.max(maxLenErr, Math.abs(len - Lrod));
+    }
+
+    expect(maxPivotErr).toBeLessThan(0.5);
+    expect(maxLenErr).toBeLessThan(1.0);
+  });
+});
+
 describe('demo scenes load and step', () => {
   for (const [path, doc] of Object.entries(demoScenes)) {
     it(`steps without NaN state: ${path.replace('../demo/', '')}`, () => {

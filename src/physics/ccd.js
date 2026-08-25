@@ -1,3 +1,5 @@
+import { areConstraintLinked } from './layout-anchors.js';
+
 /**
  * Continuous Collision Detection (CCD) for circle bodies vs static AABB surfaces.
  *
@@ -98,9 +100,10 @@ function isSeparated(cx, cy, R, ax1, ax2, ay1, ay2) {
  * Returns 1 if no mid-step collision is predicted (no split needed).
  *
  * @param {object[]} bodies  All Matter bodies in the world
+ * @param {object[]} [constraints]  Active links (rod/string ends skip CCD with their host)
  * @returns {number}
  */
-export function ccdStepFraction(bodies) {
+export function ccdStepFraction(bodies, constraints = []) {
   // Collect static collidable surfaces (exclude sensors and the metric basis).
   const statics = [];
   for (const b of bodies) {
@@ -127,6 +130,7 @@ export function ccdStepFraction(bodies) {
     if (dvx * dvx + dvy * dvy < 1e-8) continue; // stationary: skip
 
     for (const s of statics) {
+      if (areConstraintLinked(b, s, constraints)) continue;
       const bnd = s.bounds;
       const ax1 = bnd.min.x, ax2 = bnd.max.x;
       const ay1 = bnd.min.y, ay2 = bnd.max.y;

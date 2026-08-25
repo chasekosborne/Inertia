@@ -12,7 +12,8 @@ import {
   getForcePxPerN, getVelocityPxPerMs, getWeightPxPerKg,
 } from '../units.js';
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
-         wedgeVertsCentred, wedgeOutlineStrokePx } from '../physics/bodies.js';
+         wedgeVertsCentred, wedgeOutlineStrokePx, ANCHOR_PIVOT_R, ANCHOR_STROKE_PX,
+         anchorTriangleLocalVerts } from '../physics/bodies.js';
 import { getAppliedForce } from '../physics/applied-force.js';
 import { getAppliedTorque } from '../physics/applied-torque.js';
 import {
@@ -23,7 +24,7 @@ import {
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { springPathProps } from './spring-path.js';
 import { setSvgMathLabel } from '../math-text.js';
-import { ropeSelection } from '../physics/rope.js';
+import { ropeSelection, ropeStrokeWidthPx } from '../physics/rope.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);
@@ -404,6 +405,12 @@ export class SvgRenderer {
       const id = parseInt(g.id.replace('body-', ''));
       if (!seen.has(id)) g.remove();
     }
+    // Solid bodies above invisible rope-node groups within the body layer.
+    for (const b of bodies) {
+      if (b._ropeSegment || b._newtonType === 'metric-basis') continue;
+      const g = this.svg.querySelector(`#body-${b.id}`);
+      if (g?.parentNode === this._bodyLayer) this._bodyLayer.appendChild(g);
+    }
     const mb = bodies.find(b => b._newtonType === 'metric-basis');
     if (mb) {
       const g = this.svg.querySelector(`#body-${mb.id}`);
@@ -424,18 +431,21 @@ export class SvgRenderer {
 
   _createBodyGroup(body) {
     const g = el('g', { id: `body-${body.id}`, class: 'body-group' });
+    // Rope nodes are invisible hit aids for coordinate picking only — keep them
+    // out of the SVG hit stack so solid bodies paint and receive clicks on top.
+    if (body._ropeSegment) {
+      g.setAttribute('pointer-events', 'none');
+      g.classList.add('rope-node-group');
+    }
     g.addEventListener('click', e => {
       e.stopPropagation();
       if (body._newtonType === 'metric-basis' && !this._showMetricOrigin) return;
+      if (body._ropeSegment) return;
       const partEl = e.target.closest?.('[data-part-index]');
       let partIndex = null;
       if (partEl) {
         const n = parseInt(partEl.getAttribute('data-part-index') ?? '', 10);
         if (Number.isFinite(n)) partIndex = n;
-      }
-      if (body._ropeSegment && body._ropeId) {
-        this._onSelectCb?.(ropeSelection(this.engine, body._ropeId));
-        return;
       }
       this._onSelectCb?.({ type: 'body', id: body.id, partIndex });
     });
@@ -648,17 +658,14 @@ export class SvgRenderer {
   }
 
   _drawAnchor(g) {
-    const r = 4;
-    const size = 14;
-    const triH = size * 1.4;
-    // Inverted triangle above pivot circle; hinge at local origin (body centre).
+    const { apex, left, right } = anchorTriangleLocalVerts();
     g.appendChild(el('polygon', {
-      points: `0,${-r} ${-size},${-r - triH} ${size},${-r - triH}`,
-      fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': 2,
+      points: `${apex.x},${apex.y} ${left.x},${left.y} ${right.x},${right.y}`,
+      fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': ANCHOR_STROKE_PX,
       class: 'body-shape',
     }));
     g.appendChild(el('circle', {
-      cx: 0, cy: 0, r,
+      cx: 0, cy: 0, r: ANCHOR_PIVOT_R,
       fill: '#fff', stroke: STYLE.anchorStroke, 'stroke-width': 2,
     }));
   }
@@ -705,10 +712,7 @@ export class SvgRenderer {
         if (pB) pts.push(pB);
       }
       if (pts.length < 2) continue;
-      const thick = Math.max(
-        2,
-        2 * (segs[0].bodyA?._radius ?? segs[0].bodyB?._radius ?? 2.5),
-      );
+      const thick = ropeStrokeWidthPx(segs);
       const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
       const domId = `rope-stroke-${String(ropeId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
       seenDom.add(domId);
@@ -737,6 +741,9 @@ export class SvgRenderer {
 
   _createConstraintGroup(c) {
     const g = el('g', { id: `constraint-${c.id}`, class: 'constraint-group' });
+    // Rope segment hits sit under bodies; selection uses InteractionHandler
+    // coordinate tests so solid objects win when both overlap.
+    if (c._ropeLink) g.setAttribute('pointer-events', 'none');
     g.addEventListener('click', e => {
       e.stopPropagation();
       if (c._ropeLink) {
@@ -759,10 +766,7 @@ export class SvgRenderer {
     // Rope: visible stroke is the shared polyline, this group is pick-only.
     if (c._ropeLink) {
       g.style.display = '';
-      const thick = Math.max(
-        2,
-        2 * (c.bodyA?._radius ?? c.bodyB?._radius ?? 2.5),
-      );
+      const thick = ropeStrokeWidthPx([c]);
       g.appendChild(el('line', {
         x1: pA.x, y1: pA.y, x2: pB.x, y2: pB.y,
         stroke: 'transparent',

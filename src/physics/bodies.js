@@ -154,8 +154,8 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
 }
 
 /**
- * Point mass: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
- * Drawn as a filled particle (ink); set `hollow: true` for a ring.
+ * Circle: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
+ * Drawn with box-grey fill (or a hollow ring when `hollow: true`).
  * Physics type id remains `point-mass` for scenes. Finite inertia → can roll.
  */
 export function createPointMass(x, y, opts = {}) {
@@ -168,7 +168,7 @@ export function createCircle(x, y, opts = {}) {
 }
 
 /**
- * Solid ball: smaller filled disk, rolls or slips under Coulomb friction.
+ * Point: smaller solid ink disk. Rolls or slips under Coulomb friction.
  */
 export function createBall(x, y, opts = {}) {
   return _createCircleBody(x, y, opts, 'ball', DEFAULT_BALL_RADIUS_M, 'ball');
@@ -797,14 +797,15 @@ export function createWedge(x, y, opts = {}) {
 }
 
 /**
- * Create a static pivot anchor: inverted triangle on a pivot circle
+ * Create a static pivot: inverted triangle on a hinge circle
  * (body.position = circle centre = constraint attachment).
+ * Internal type remains `anchor` for scene compatibility; UI calls it Pivot.
  */
 export function createAnchor(x, y) {
   const body = Bodies.circle(x, y, 6, {
     isStatic: true,
     collisionFilter: { mask: 0 },
-    label: `anchor_${nextId()}`,
+    label: `pivot_${nextId()}`,
   });
   body._newtonType = 'anchor';
   return body;

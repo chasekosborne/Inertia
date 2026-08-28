@@ -23,8 +23,10 @@ const { Body } = Matter;
  * @property {string} label
  * @property {string} unit
  * @property {string} [bodyId]  default body for rock demos
- * @property {'sim'|'slip-force'|'extrema'} [kind]
+ * @property {'sim'|'slip-force'|'extrema'|'resonance'|'measurement'} [kind]
  * @property {boolean} [preferred]
+ * @property {number} [tMax]  Override sim horizon (s) for this metric
+ * @property {number} [discardFrac]  Resonance: fraction of tMax to discard as transient
  * @property {string} [group]  optgroup label
  * @property {(ctx: MetricContext) => number|null} compute
  */
@@ -152,6 +154,40 @@ export function runTrackExtrema(engine, bodyId, tMax) {
   }
 
   return track;
+}
+
+/**
+ * Run until tMax; return steady-state amplitude of display x
+ * (half peak-to-peak after discarding an initial transient fraction).
+ * @param {import('../physics/engine.js').PhysicsEngine} engine
+ * @param {string} bodyId
+ * @param {number} tMax
+ * @param {{ discardFrac?: number }} [opts]
+ * @returns {number|null}
+ */
+export function runSteadyAmplitudeX(engine, bodyId, tMax, opts = {}) {
+  const body = findBody(engine, bodyId);
+  if (!body) return null;
+
+  const tLimit = Math.max(0.2, tMax);
+  const discardFrac = Math.min(0.95, Math.max(0, opts.discardFrac ?? 0.7));
+  const tDiscard = tLimit * discardFrac;
+
+  let maxX = -Infinity;
+  let minX = Infinity;
+  let n = 0;
+
+  while (engine.simTime < tLimit) {
+    engine.step();
+    if (engine.simTime < tDiscard) continue;
+    const x = sampleDisplayX(engine, body);
+    if (x > maxX) maxX = x;
+    if (x < minX) minX = x;
+    n++;
+  }
+
+  if (n < 2 || !isFinite(maxX) || !isFinite(minX)) return null;
+  return 0.5 * (maxX - minX);
 }
 
 /**
@@ -387,11 +423,34 @@ export function metricsForScene(doc, opts = {}) {
     return out.length ? out : SWEEP_METRICS;
   }
 
-  const preferSlip = doc?.meta?.demoId === 'pull-at-angle'
-    || selected.some(b => b?.appliedForce && b.appliedForce.F > 0);
+  const preferDrive = doc?.meta?.demoId === 'driven-harmonic-oscillator'
+    || selected.some(b => b?.drivenApplied === true);
+  const preferSlip = !preferDrive && (
+    doc?.meta?.demoId === 'pull-at-angle'
+    || selected.some(b => b?.appliedForce && b.appliedForce.F > 0)
+  );
 
   for (const b of selected) {
-    out.push(...extremaMetricsForBody(b.id, { preferMaxY: !preferSlip }));
+    if (b.drivenApplied === true || preferDrive) {
+      const discardFrac = 0.7;
+      const resonanceTMax = 25;
+      out.push({
+        id: `amp_x:${b.id}`,
+        label: 'Aₓ (steady)',
+        unit: 'm',
+        kind: 'resonance',
+        group: 'Resonance',
+        bodyId: b.id,
+        preferred: preferDrive,
+        tMax: resonanceTMax,
+        discardFrac,
+        compute(ctx) {
+          return runSteadyAmplitudeX(ctx.engine, b.id, ctx.tMax, { discardFrac });
+        },
+      });
+    }
+
+    out.push(...extremaMetricsForBody(b.id, { preferMaxY: !preferSlip && !preferDrive }));
 
     out.push({
       ...SWEEP_METRICS[0],

@@ -7,8 +7,8 @@
  *
  * About the COM, L = Iω (spin only). About a fixed point O,
  * L_O = Iω + r_com/O × p  (spin + orbital). The ⊙/⊗ glyph at the COM
- * shows spin L (painted above bodies). Planar force / velocity arrows
- * paint above body fills (below L/τ). Contact friction changes spin while coupling to
+ * shows angular velocity ω (painted above bodies). Planar force / velocity arrows
+ * paint above body fills (below ω/τ). Contact friction changes spin while coupling to
  * translation so pure rolling (v = ωr) can develop; total L about an
  * inertial origin is conserved when net external torque about that origin
  * vanishes.

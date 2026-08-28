@@ -37,9 +37,13 @@ export const SCENE_VERSION = 1;
  * @property {boolean} [isStatic]  Anchored: fixed like ground (circle/ball/box/wedge)
  * @property {object} [geometry]  radius (m), point-mass hollow, box/wedge size (m)
  * @property {object} [material]
- * @property {{ F: number, thetaDeg: number }} [appliedForce]  Constant pull (N, ° above +x)
+ * @property {{ F: number, thetaDeg: number }} [appliedForce]  Constant pull (N, ° above +x); F may be 0 when drivenApplied
+ * @property {boolean} [drivenApplied]  Body: time-varying applied F(t) along θ
+ * @property {string} [drivenAppliedForce]  Body drive F(t) expression (N), e.g. `5*sin(2*pi*t)`
  * @property {number} [angularVelocity]  Display ω_z (rad/s): + CCW / out of screen
  * @property {number} [appliedTorque]  Display τ (N·m): + CCW / out of screen
+ * @property {boolean} [driven]  Anchor: time-varying drive
+ * @property {string} [drivenTorque]  Anchor drive τ(t) expression (N·m), e.g. `0.5*sin(2*pi*t)`
  */
 
 /**

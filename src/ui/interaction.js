@@ -5,6 +5,7 @@
  *   select         : drag bodies; rod/string bobs arc at fixed length (Ctrl → 5°);
  *                     springs pinned to an anchor pivot arc at rest length; all other
  *                     springs stretch/compress visually while rest length stays fixed;
+ *                     rope hosts clamp to rest length and reproject segments (no stretch);
  *                     hanging chains (e.g. double pendulum) translate with the dragged mass,
  *                     with constraint selected, drag its line to translate attached
  *                     non-static bodies together
@@ -31,7 +32,7 @@ import { createRod, createSpring } from '../physics/constraints.js';
 import {
   createFreeRope, ropeSegmentCountForLength, ropeSelection, listRopeSegments, clampRopeSegments,
   snapRopePins, ROPE_THICKNESS_M, ropeStrokeWidthPx, findRopeEndTarget, mergeRopesAtEnds,
-  enforceRopeLength,
+  enforceRopeLength, clampHostBodyForRopeRest, enforceRopesForHost, syncRopesAfterHostMove,
 } from '../physics/rope.js';
 import {
   findPendulumGuidance,
@@ -781,8 +782,9 @@ export class InteractionHandler {
         dtxt.textContent = `${((phi * 180) / Math.PI).toFixed(0)}° (${SNAP_ANGLE_STEP_5_DEG}° snap)`;
         this._ghostLayer.appendChild(dtxt);
       }
+      clampHostBodyForRopeRest(this.engine, body);
       applyHangingChainTranslation(this._hangingChain, body);
-      snapRopePins(this.engine);
+      enforceRopesForHost(this.engine, body);
       return;
     }
 
@@ -809,8 +811,10 @@ export class InteractionHandler {
       this._dragging.force.x = 0;
       this._dragging.force.y = 0;
       this._dragging.torque = 0;
+      // Clamp before hanging-chain translate so sister bodies track the final pose.
+      clampHostBodyForRopeRest(this.engine, this._dragging);
       applyHangingChainTranslation(this._hangingChain, this._dragging);
-      snapRopePins(this.engine);
+      enforceRopesForHost(this.engine, this._dragging);
       return;
     }
 
@@ -831,7 +835,7 @@ export class InteractionHandler {
       }
       Body.setAngularVelocity(body, 0);
       body.torque = 0;
-      snapRopePins(this.engine);
+      syncRopesAfterHostMove(this.engine, body);
 
       this._clearGhost();
       this._drawRotateGhost(body, e.ctrlKey);
@@ -1078,7 +1082,7 @@ export class InteractionHandler {
       const body = this._rotating.body;
       if (body?._newtonType === 'wedge' && this._snapEnabled) {
         snapWedgeToGrid(body, true);
-        snapRopePins(this.engine);
+        syncRopesAfterHostMove(this.engine, body);
       }
       this._rotating = null;
       this._ignoreNextClick = true;

@@ -1,3 +1,12 @@
+import {
+  isDrivenAppliedForce,
+  evaluateDrivenAppliedForce,
+} from '../physics/applied-force.js';
+import {
+  isDrivenPivot,
+  evaluateDrivenTorque,
+} from '../physics/driven-pivot.js';
+
 /**
  * Recorder: captures per-frame snapshots of the physics world state.
  *
@@ -17,6 +26,8 @@ export class Recorder {
   get isRecording() { return this._active; }
   get frameCount()  { return this._frames.length; }
   get frames()      { return this._frames; }
+  /** Absolute simTime (s) of the first captured frame, or 0 if empty. */
+  get recordingStartTime() { return this._startTime ?? 0; }
 
   /** Begin (or continue) recording: does NOT clear existing frames. */
   start() {
@@ -43,13 +54,35 @@ export class Recorder {
 
     const t = simTime - this._startTime;
 
-    const bodiesSnap = bodies.map(b => this._snapBody(b));
+    const bodiesSnap = bodies.map(b => this._snapBody(b, simTime));
     const constraintsSnap = constraints.map(c => this._snapConstraint(c));
 
     this._frames.push({ t, bodies: bodiesSnap, constraints: constraintsSnap });
   }
 
-  _snapBody(b) {
+  /**
+   * @param {import('matter-js').Body} b
+   * @param {number} simTime
+   */
+  _snapBody(b, simTime) {
+    const drivenApplied = isDrivenAppliedForce(b);
+    let drivenAppliedF = null;
+    if (drivenApplied) {
+      // Prefer a fresh eval at capture time so the series is complete even if
+      // the last physics sample was skipped (F=0) or not yet written.
+      const F = evaluateDrivenAppliedForce(b, simTime);
+      if (Number.isFinite(F)) drivenAppliedF = F;
+      else if (Number.isFinite(b._drivenAppliedLastF)) drivenAppliedF = b._drivenAppliedLastF;
+    }
+
+    const drivenPivot = isDrivenPivot(b);
+    let drivenTorque = null;
+    if (drivenPivot) {
+      const tau = evaluateDrivenTorque(b, simTime);
+      if (Number.isFinite(tau)) drivenTorque = tau;
+      else if (Number.isFinite(b._drivenTorqueLast)) drivenTorque = b._drivenTorqueLast;
+    }
+
     const snap = {
       id:    b.id,
       type:  b._newtonType ?? 'generic',
@@ -76,6 +109,11 @@ export class Recorder {
       frictionAir: b.frictionAir ?? null,
       stickOnContact: !!b._stickOnContact,
       lockRotation: !!b._lockRotation,
+      driven: drivenPivot,
+      drivenVisualAngle: Number.isFinite(b._drivenVisualAngle) ? b._drivenVisualAngle : 0,
+      drivenApplied,
+      drivenAppliedF,
+      drivenTorque,
       weldParts: null,
     };
 

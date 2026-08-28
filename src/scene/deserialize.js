@@ -5,8 +5,14 @@ import {
 } from '../physics/bodies.js';
 import { createRod, createSpring } from '../physics/constraints.js';
 import { applyRopeMaterialFlags, resolveRopeHosts, ROPE_COLLISION_GROUP } from '../physics/rope.js';
-import { setAppliedForce } from '../physics/applied-force.js';
+import {
+  setAppliedForce,
+  setDrivenAppliedForce,
+  setDrivenAppliedForceExpr,
+  supportsAppliedForce,
+} from '../physics/applied-force.js';
 import { setAppliedTorque } from '../physics/applied-torque.js';
+import { setDriven, setDrivenTorqueExpr } from '../physics/driven-pivot.js';
 import { displayOmegaToMatter } from '../physics/angular.js';
 import {
   PX_PER_M, mToPx, displayMSToMatterVel,
@@ -189,11 +195,23 @@ function ingestSceneBodies(engine, bodies, constraints, opts = {}) {
     if (bd.material?.ropeSegment === true) {
       applyRopeMaterialFlags(body, bd.material);
     }
+    if (supportsAppliedForce(body) && bd.drivenApplied === true) {
+      setDrivenAppliedForce(body, true);
+      if (typeof bd.drivenAppliedForce === 'string' && bd.drivenAppliedForce.trim()) {
+        setDrivenAppliedForceExpr(body, bd.drivenAppliedForce);
+      }
+    }
     if (bd.appliedForce && typeof bd.appliedForce === 'object') {
       setAppliedForce(body, bd.appliedForce.F, bd.appliedForce.thetaDeg);
     }
     if (typeof bd.appliedTorque === 'number' && isFinite(bd.appliedTorque) && bd.appliedTorque !== 0) {
       setAppliedTorque(body, bd.appliedTorque);
+    }
+    if (bd.type === 'anchor' && bd.driven === true) {
+      setDriven(body, true);
+      if (typeof bd.drivenTorque === 'string' && bd.drivenTorque.trim()) {
+        setDrivenTorqueExpr(body, bd.drivenTorque);
+      }
     }
     const { vx, vy } = displayMSToMatterVel(
       bd.velocity?.vx ?? 0,

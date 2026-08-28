@@ -13,8 +13,27 @@ import {
   snapWedgeToGrid,
   setBodyAnchored, setBodyMass, bodyDisplayMass, applyCircleInertia,
 } from '../physics/bodies.js';
-import { setAppliedForce, clearAppliedForce, getAppliedForce } from '../physics/applied-force.js';
+import {
+  setAppliedForce,
+  clearAppliedForce,
+  getAppliedForce,
+  getAppliedForceDirection,
+  isDrivenAppliedForce,
+  setDrivenAppliedForce,
+  getDrivenAppliedForceExpr,
+  setDrivenAppliedForceExpr,
+  getDrivenAppliedForceError,
+  DEFAULT_DRIVEN_APPLIED_FORCE_EXPR,
+} from '../physics/applied-force.js';
 import { setAppliedTorque, clearAppliedTorque, getAppliedTorque } from '../physics/applied-torque.js';
+import {
+  isDrivenPivot,
+  setDriven,
+  getDrivenTorqueExpr,
+  setDrivenTorqueExpr,
+  getDrivenTorqueError,
+  DEFAULT_DRIVEN_TORQUE_EXPR,
+} from '../physics/driven-pivot.js';
 import {
   matterOmegaToDisplay,
   displayOmegaToMatter,
@@ -26,6 +45,7 @@ import {
   listRopeSegments, rebuildRope, removeRope, ropeCenterlineWorldPx, ROPE_THICKNESS_M,
   ROPE_MIN_SEGMENTS, ROPE_MAX_SEGMENTS, clampRopeSegments,
   ropeSelection, ropeDisplayName, renameRope, getRopeEndAttachment,
+  syncRopesAfterHostMove,
 } from '../physics/rope.js';
 import { aggregateState, bodyDisplayName } from '../scene/aggregates.js';
 import { snapWorldCoord, snapVelocityToGrid, snapBodySizePx } from '../grid.js';
@@ -40,6 +60,7 @@ import {
   DEFAULT_BALL_RADIUS_M,
 } from '../units.js';
 import { MATH } from '../math-text.js';
+import { mountMathExprInput, syncMathExprInput } from './math-expr-input.js';
 
 const { Body } = Matter;
 
@@ -94,6 +115,11 @@ export class PropertiesPanel {
   }
 
   _snapOn() { return this._getSnapEnabled?.() ?? false; }
+
+  /** After a host body moves in the panel, reproject attached ropes (no stretch). */
+  _syncBodyRopes(body) {
+    if (body) syncRopesAfterHostMove(this.engine, body);
+  }
 
   /** Non-negative number from an input or raw string; empty/invalid → 0. */
   _parseNonNeg(elOrValue) {
@@ -257,6 +283,25 @@ export class PropertiesPanel {
     this.panel.querySelector('#prop-F-theta')?.addEventListener('change', applyPolar);
     this.panel.querySelector('#prop-Fx')?.addEventListener('change', applyCartesian);
     this.panel.querySelector('#prop-Fy')?.addEventListener('change', applyCartesian);
+
+    this.panel.querySelector('#prop-driven-applied')?.addEventListener('change', e => {
+      const b = readBody();
+      if (!b) return;
+      this._push();
+      const on = !!e.target.checked;
+      setDrivenAppliedForce(b, on);
+      const section = this.panel.querySelector('#prop-driven-applied-section');
+      section?.classList.toggle('hidden', !on);
+      const constRows = this.panel.querySelector('#prop-applied-const-rows');
+      constRows?.classList.toggle('hidden', on);
+      if (on) {
+        requestAnimationFrame(() => this._bindDrivenAppliedExprInput(b));
+      }
+      this.engine.invalidateEnergyTarget?.();
+    });
+
+    const b0 = readBody();
+    if (b0 && isDrivenAppliedForce(b0)) this._bindDrivenAppliedExprInput(b0);
   }
 
   applyVelocity(body, vxPx, vyPx, { snapGrid } = {}) {
@@ -272,35 +317,54 @@ export class PropertiesPanel {
   /** Update constant applied pull F (N) at θ° above +x. F ≤ 0 clears it. */
   applyAppliedForce(body, F, thetaDeg) {
     if (F > 0 && isFinite(F) && isFinite(thetaDeg)) setAppliedForce(body, F, thetaDeg);
+    else if (isDrivenAppliedForce(body) && isFinite(thetaDeg)) setAppliedForce(body, 0, thetaDeg);
     else clearAppliedForce(body);
     this._rebuildAppliedForceInputs(body);
   }
 
-  /** Polar + Cartesian applied-force rows (mirrors v₀). */
+  /** Polar + Cartesian applied-force rows (mirrors v₀), plus optional F(t). */
   _appliedForceRowsHtml(body) {
     const af = getAppliedForce(body);
+    const driven = isDrivenAppliedForce(body);
     const F = af?.F ?? 0;
-    const thetaDeg = af?.thetaDeg ?? 0;
+    const thetaDeg = af?.thetaDeg ?? getAppliedForceDirection(body);
     const rad = thetaDeg * Math.PI / 180;
     const Fx = F * Math.cos(rad);
     const Fy = F * Math.sin(rad);
+    const expr = getDrivenAppliedForceExpr(body) || DEFAULT_DRIVEN_APPLIED_FORCE_EXPR;
+    const err = getDrivenAppliedForceError(body);
     return `
       <div class="prop-section-title" style="margin-top:8px">Applied force ${MATH.F}</div>
       <div class="prop-row">
-        <span class="prop-label">|${MATH.F}| (N)</span>
-        <input class="prop-value" id="prop-F" type="number" step="0.1" min="0" value="${F.toFixed(3)}"/>
+        <span class="prop-label">Driven</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="prop-driven-applied" ${driven ? 'checked' : ''}/>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div id="prop-driven-applied-section" class="${driven ? '' : 'hidden'}">
+        <div class="prop-section-title" style="margin-top:8px">${MATH.F}(t) (N)</div>
+        <div class="prop-math-expr-wrap" id="prop-driven-F-applied-wrap"
+          data-expr="${_escapeHtml(expr)}"></div>
+        <p class="prop-expr-error ${err ? '' : 'hidden'}" id="prop-driven-F-applied-err">${err ? _escapeHtml(err) : ''}</p>
       </div>
       <div class="prop-row">
         <span class="prop-label">${MATH.theta} (°)</span>
         <input class="prop-value" id="prop-F-theta" type="number" step="1" min="-180" max="180" value="${thetaDeg.toFixed(1)}"/>
       </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.Fx} (N)</span>
-        <input class="prop-value" id="prop-Fx" type="number" step="0.1" value="${Fx.toFixed(3)}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.Fy} (N)</span>
-        <input class="prop-value" id="prop-Fy" type="number" step="0.1" value="${Fy.toFixed(3)}"/>
+      <div id="prop-applied-const-rows" class="${driven ? 'hidden' : ''}">
+        <div class="prop-row">
+          <span class="prop-label">|${MATH.F}| (N)</span>
+          <input class="prop-value" id="prop-F" type="number" step="0.1" min="0" value="${F.toFixed(3)}"/>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">${MATH.Fx} (N)</span>
+          <input class="prop-value" id="prop-Fx" type="number" step="0.1" value="${Fx.toFixed(3)}"/>
+        </div>
+        <div class="prop-row">
+          <span class="prop-label">${MATH.Fy} (N)</span>
+          <input class="prop-value" id="prop-Fy" type="number" step="0.1" value="${Fy.toFixed(3)}"/>
+        </div>
       </div>`;
   }
 
@@ -308,7 +372,7 @@ export class PropertiesPanel {
   _rebuildAppliedForceInputs(body) {
     const af = getAppliedForce(body);
     const F = af?.F ?? 0;
-    const thetaDeg = af?.thetaDeg ?? 0;
+    const thetaDeg = af?.thetaDeg ?? getAppliedForceDirection(body);
     const rad = thetaDeg * Math.PI / 180;
     const Fx = F * Math.cos(rad);
     const Fy = F * Math.sin(rad);
@@ -316,6 +380,41 @@ export class PropertiesPanel {
     this._setVField('#prop-F-theta', thetaDeg.toFixed(1));
     this._setVField('#prop-Fx', Fx.toFixed(3));
     this._setVField('#prop-Fy', Fy.toFixed(3));
+  }
+
+  /**
+   * Symbolic F(t) input for driven applied force.
+   * @param {import('matter-js').Body} body
+   */
+  _bindDrivenAppliedExprInput(body) {
+    const wrap = this.panel.querySelector('#prop-driven-F-applied-wrap');
+    if (!wrap || wrap.dataset.bound === '1') return;
+
+    const applyAscii = (ascii) => {
+      this._push();
+      const result = setDrivenAppliedForceExpr(
+        body,
+        ascii || DEFAULT_DRIVEN_APPLIED_FORCE_EXPR,
+      );
+      if (result.ok) syncMathExprInput(wrap, result.source);
+      const errEl = this.panel.querySelector('#prop-driven-F-applied-err');
+      if (errEl) {
+        if (result.ok) {
+          errEl.textContent = '';
+          errEl.classList.add('hidden');
+        } else {
+          errEl.textContent = result.error ?? 'Invalid expression';
+          errEl.classList.remove('hidden');
+        }
+      }
+      this.engine.invalidateEnergyTarget?.();
+    };
+
+    mountMathExprInput(wrap, {
+      expr: getDrivenAppliedForceExpr(body) || DEFAULT_DRIVEN_APPLIED_FORCE_EXPR,
+      fallbackExpr: DEFAULT_DRIVEN_APPLIED_FORCE_EXPR,
+      onApply: applyAscii,
+    });
   }
 
   /**
@@ -994,6 +1093,7 @@ export class PropertiesPanel {
     else if (nt === 'box') this._buildBoxPanel(body);
     else if (nt === 'wedge') this._buildWedgePanel(body);
     else if (nt === 'compound') this._buildCompoundPanel(body);
+    else if (nt === 'anchor') this._buildAnchorPanel(body);
     else this._buildGenericPanel(body);
   }
 
@@ -1317,6 +1417,7 @@ export class PropertiesPanel {
       const nx = snapWorldCoord(xPx, this._snapOn());
       const ny = snapWorldCoord(yKeep, this._snapOn());
       Body.setPosition(body, { x: nx, y: ny });
+      this._syncBodyRopes(body);
     });
     this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
       this._push();
@@ -1325,6 +1426,7 @@ export class PropertiesPanel {
       const nx = snapWorldCoord(xKeep, this._snapOn());
       const ny = snapWorldCoord(yPx, this._snapOn());
       Body.setPosition(body, { x: nx, y: ny });
+      this._syncBodyRopes(body);
     });
     this.panel.querySelector('#prop-mass')?.addEventListener('change', e => {
       this._push();
@@ -1409,7 +1511,7 @@ export class PropertiesPanel {
   /** Keep position / layout readouts in sync while the sim runs (skip focused inputs). */
   _rebuildPositionInputs(body) {
     const nt = body._newtonType;
-    if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge') {
+    if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge' || nt === 'anchor') {
       const origin = nt === 'wedge' ? wedgeAABBCenterWorld(body) : body.position;
       const { xm, ym } = worldPxToDisplayedM(origin.x, origin.y);
       this._setVField('#prop-x', xm.toFixed(2));
@@ -1871,6 +1973,7 @@ export class PropertiesPanel {
         x: snapWorldCoord(xPx, this._snapOn()),
         y: snapWorldCoord(yKeep, this._snapOn()),
       });
+      this._syncBodyRopes(b);
     });
     this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
       const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
@@ -1882,6 +1985,7 @@ export class PropertiesPanel {
         x: snapWorldCoord(xKeep, this._snapOn()),
         y: snapWorldCoord(yPx, this._snapOn()),
       });
+      this._syncBodyRopes(b);
     });
     this.panel.querySelector('#prop-box-w')?.addEventListener('change', e => {
       const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
@@ -2072,6 +2176,116 @@ export class PropertiesPanel {
     });
   }
 
+  _buildAnchorPanel(body) {
+    const { xm: xM0, ym: yM0 } = worldPxToDisplayedM(body.position.x, body.position.y);
+    const driven = isDrivenPivot(body);
+    const expr = getDrivenTorqueExpr(body) || DEFAULT_DRIVEN_TORQUE_EXPR;
+    const err = getDrivenTorqueError(body);
+
+    this.panel.innerHTML = `
+      <div class="prop-section-title">Pivot</div>
+      <div class="prop-row">
+        <span class="prop-label">${MATH.x} (m)</span>
+        <input class="prop-value" id="prop-x" type="number" step="0.1" value="${xM0.toFixed(3)}"/>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">${MATH.y} (m)</span>
+        <input class="prop-value" id="prop-y" type="number" step="0.1" value="${yM0.toFixed(3)}"/>
+      </div>
+      <div class="prop-section-title" style="margin-top:10px">Driven oscillator</div>
+      <div class="prop-row">
+        <span class="prop-label">Driven</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="prop-driven" ${driven ? 'checked' : ''}/>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+      <div id="prop-driven-section" class="${driven ? '' : 'hidden'}">
+        <div class="prop-section-title" style="margin-top:8px">${MATH.tau}(t) (N·m)</div>
+        <div class="prop-math-expr-wrap" id="prop-driven-tau-wrap"
+          data-expr="${_escapeHtml(expr)}"></div>
+        <p class="prop-expr-error ${err ? '' : 'hidden'}" id="prop-driven-err">${err ? _escapeHtml(err) : ''}</p>
+      </div>
+      <button class="prop-delete-btn" id="prop-delete">Delete</button>
+    `;
+
+    this.panel.querySelector('#prop-x')?.addEventListener('change', e => {
+      this._push();
+      const cur = worldPxToDisplayedM(body.position.x, body.position.y);
+      const { x: xPx, y: yKeep } = displayedMToWorldPx(parseFloat(e.target.value), cur.ym);
+      Body.setPosition(body, {
+        x: snapWorldCoord(xPx, this._snapOn()),
+        y: snapWorldCoord(yKeep, this._snapOn()),
+      });
+      this._syncBodyRopes(body);
+    });
+    this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
+      this._push();
+      const cur = worldPxToDisplayedM(body.position.x, body.position.y);
+      const { x: xKeep, y: yPx } = displayedMToWorldPx(cur.xm, parseFloat(e.target.value));
+      Body.setPosition(body, {
+        x: snapWorldCoord(xKeep, this._snapOn()),
+        y: snapWorldCoord(yPx, this._snapOn()),
+      });
+      this._syncBodyRopes(body);
+    });
+
+    this.panel.querySelector('#prop-driven')?.addEventListener('change', e => {
+      this._push();
+      const on = !!e.target.checked;
+      setDriven(body, on);
+      const section = this.panel.querySelector('#prop-driven-section');
+      section?.classList.toggle('hidden', !on);
+      if (on) {
+        requestAnimationFrame(() => this._bindDrivenExprInput(body));
+      }
+      this.engine.invalidateEnergyTarget?.();
+    });
+
+    if (driven) this._bindDrivenExprInput(body);
+
+    this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
+      this._push();
+      this.engine.removeBody(body);
+      this.clear();
+    });
+  }
+
+  /**
+   * Symbolic τ(t) input for driven pivot.
+   * @param {import('matter-js').Body} body
+   */
+  _bindDrivenExprInput(body) {
+    const wrap = this.panel.querySelector('#prop-driven-tau-wrap');
+    if (!wrap || wrap.dataset.bound === '1') return;
+
+    const applyAscii = (ascii) => {
+      this._push();
+      const result = setDrivenTorqueExpr(
+        body,
+        ascii || DEFAULT_DRIVEN_TORQUE_EXPR,
+      );
+      if (result.ok) syncMathExprInput(wrap, result.source);
+      const errEl = this.panel.querySelector('#prop-driven-err');
+      if (errEl) {
+        if (result.ok) {
+          errEl.textContent = '';
+          errEl.classList.add('hidden');
+        } else {
+          errEl.textContent = result.error ?? 'Invalid expression';
+          errEl.classList.remove('hidden');
+        }
+      }
+      this.engine.invalidateEnergyTarget?.();
+    };
+
+    mountMathExprInput(wrap, {
+      expr: getDrivenTorqueExpr(body) || DEFAULT_DRIVEN_TORQUE_EXPR,
+      fallbackExpr: DEFAULT_DRIVEN_TORQUE_EXPR,
+      onApply: applyAscii,
+    });
+  }
+
   _buildGenericPanel(body) {
     const bType  = body._newtonType ?? 'generic';
     const muK    = (body._muK ?? body.friction).toFixed(3);
@@ -2114,6 +2328,7 @@ export class PropertiesPanel {
           x: snapWorldCoord(xPx, this._snapOn()),
           y: snapWorldCoord(yKeep, this._snapOn()),
         });
+        this._syncBodyRopes(body);
       });
       this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
         this._push();
@@ -2123,6 +2338,7 @@ export class PropertiesPanel {
           x: snapWorldCoord(xKeep, this._snapOn()),
           y: snapWorldCoord(yPx, this._snapOn()),
         });
+        this._syncBodyRopes(body);
       });
     }
     this.panel.querySelector('#prop-rest')?.addEventListener('change', e => {
@@ -2155,7 +2371,7 @@ export class PropertiesPanel {
     if (nt === 'metric-basis') {
       this._setVField('#prop-x', pxToM(body.position.x).toFixed(2));
       this._setVField('#prop-y', pxToM(body.position.y).toFixed(2));
-    } else if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge' || nt === 'ground' || !body.isStatic) {
+    } else if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge' || nt === 'ground' || nt === 'anchor' || !body.isStatic) {
       this._rebuildPositionInputs(body);
     }
   }

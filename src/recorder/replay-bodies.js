@@ -101,7 +101,45 @@ export function createBodyFromSnap(snap) {
   Body.setAngle(body, snap.angle ?? 0);
   Body.setVelocity(body, { x: snap.vx ?? 0, y: snap.vy ?? 0 });
   Body.setAngularVelocity(body, Number.isFinite(snap.w) ? snap.w : 0);
+  applyDriveSnapToBody(body, snap);
   return body;
+}
+
+/**
+ * Restore driven-pivot / driven-applied display state from a recorder snap.
+ * Used by playback scrubbing so F_app arrows and the checkered hinge match the frame.
+ * @param {import('matter-js').Body} body
+ * @param {object} snap
+ */
+export function applyDriveSnapToBody(body, snap) {
+  if (!body || !snap) return;
+
+  if (snap.type === 'anchor' || body._newtonType === 'anchor') {
+    if (snap.driven === true) {
+      body._driven = true;
+      if (Number.isFinite(snap.drivenVisualAngle)) {
+        body._drivenVisualAngle = snap.drivenVisualAngle;
+      }
+      body._drivenTorqueLast = Number.isFinite(snap.drivenTorque) ? snap.drivenTorque : null;
+    } else if (snap.driven === false) {
+      body._driven = false;
+      body._drivenVisualAngle = 0;
+      body._drivenTorqueLast = null;
+    } else if (Number.isFinite(snap.drivenVisualAngle)) {
+      // Older snaps may omit `driven` but still store the glyph angle.
+      body._drivenVisualAngle = snap.drivenVisualAngle;
+    }
+  }
+
+  if (snap.drivenApplied === true) {
+    body._drivenApplied = true;
+    body._drivenAppliedLastF = Number.isFinite(snap.drivenAppliedF) ? snap.drivenAppliedF : null;
+  } else if (snap.drivenApplied === false) {
+    body._drivenApplied = false;
+    body._drivenAppliedLastF = null;
+  } else if (Number.isFinite(snap.drivenAppliedF)) {
+    body._drivenAppliedLastF = snap.drivenAppliedF;
+  }
 }
 
 function _createCompoundFromSnap(snap) {

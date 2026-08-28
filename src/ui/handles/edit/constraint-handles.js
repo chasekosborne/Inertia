@@ -22,6 +22,7 @@ import {
   captureHangingChain,
   applyHangingChainTranslation,
 } from '../../../physics/layout-anchors.js';
+import { syncRopesAfterHostMove } from '../../../physics/rope.js';
 import { snapWorldCoord } from '../../../grid.js';
 import { PX_PER_M } from '../../../units.js';
 import { FONT_DIAGRAM } from '../../../theme.js';
@@ -170,6 +171,7 @@ export const constraintHandles = {
     if (movedBody && drag.hangingChain) {
       applyHangingChainTranslation(drag.hangingChain, movedBody);
     }
+    if (movedBody) syncRopesAfterHostMove(context.engine, movedBody);
     session.updatePositions();
 
     // Guide: dashed axis from the pivot through the new attach point,

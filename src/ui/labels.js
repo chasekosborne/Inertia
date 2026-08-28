@@ -118,6 +118,14 @@ function _anchorToScene(anchor) {
   return out;
 }
 
+/** @param {{ x: number, y: number }} textPx @param {{ x: number, y: number }} targetPx */
+function textOffsetMFromWorldPx(textPx, targetPx) {
+  return {
+    x: pxToM(textPx.x - targetPx.x),
+    y: pxToM(targetPx.y - textPx.y),
+  };
+}
+
 /** @param {import('matter-js').Body} body @param {{ x: number, y: number }} pt world px */
 function _clickToBodyOffsetM(body, pt) {
   let cx = body.position.x;
@@ -513,6 +521,7 @@ export class LabelManager {
   moveTarget(id, pt, opts = {}) {
     const item = this.getById(id);
     if (!item) return false;
+    const textPosBefore = this._resolveTextPos(item);
     let p = { ...pt };
     if (opts.snap !== false && this._snapEnabled()) p = this._snapPt(p);
 
@@ -530,6 +539,10 @@ export class LabelManager {
         delete item.frozenTarget;
         delete item.pointM;
       }
+      if (textPosBefore) {
+        const newTarget = this._resolveTarget(item);
+        if (newTarget) this._preserveTextOffsetFrom(item, newTarget, textPosBefore);
+      }
       this.sync();
       return true;
     }
@@ -543,6 +556,10 @@ export class LabelManager {
       item.positionM = pointM;
     } else {
       return false;
+    }
+    if (textPosBefore) {
+      const newTarget = this._resolveTarget(item);
+      if (newTarget) this._preserveTextOffsetFrom(item, newTarget, textPosBefore);
     }
     this.sync();
     return true;
@@ -587,16 +604,15 @@ export class LabelManager {
   }
 
   /**
-   * Keep the text where it is after retargeting / placement change.
+   * Keep the text at a fixed world position when the leader target moves.
    * @param {object} item
+   * @param {{ x: number, y: number }} targetPx
+   * @param {{ x: number, y: number }} [textPx]  current text position (capture before retargeting)
    */
-  _preserveTextOffsetFrom(item, targetPx) {
-    const textPos = this._resolveTextPos(item);
+  _preserveTextOffsetFrom(item, targetPx, textPx) {
+    const textPos = textPx ?? this._resolveTextPos(item);
     if (!textPos || !targetPx) return;
-    item.textOffsetM = {
-      x: pxToM(textPos.x - targetPx.x),
-      y: -pxToM(textPos.y - targetPx.y),
-    };
+    item.textOffsetM = textOffsetMFromWorldPx(textPos, targetPx);
   }
 
   /** @param {{ x: number, y: number }} pt */
@@ -613,6 +629,7 @@ export class LabelManager {
     const snapped = this._snapPt(pt);
     const picked = this._pickAnchor(snapped, this._snapEnabled());
     this._onBeforeChange?.();
+    const textPosBefore = this._resolveTextPos(item);
 
     if (pick.mode === 'inline') {
       if (picked.kind === 'world') return false;
@@ -633,8 +650,8 @@ export class LabelManager {
       delete item.positionM;
       delete item.frozenTarget;
       const targetPx = this._resolveAnchor?.(picked);
-      if (targetPx) this._preserveTextOffsetFrom(item, targetPx);
-      if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
+      if (textPosBefore && targetPx) this._preserveTextOffsetFrom(item, targetPx, textPosBefore);
+      else if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
     } else {
       const wx = picked.kind === 'world' ? picked.x : snapped.x;
       const wy = picked.kind === 'world' ? picked.y : snapped.y;
@@ -648,8 +665,8 @@ export class LabelManager {
       delete item.offsetM;
       delete item.positionM;
       const targetPx = { x: wx, y: wy };
-      this._preserveTextOffsetFrom(item, targetPx);
-      if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
+      if (textPosBefore) this._preserveTextOffsetFrom(item, targetPx, textPosBefore);
+      else if (!item.textOffsetM) item.textOffsetM = { x: 0, y: 0.15 };
     }
 
     this._pickMode = null;
@@ -764,15 +781,10 @@ export class LabelManager {
       return true;
     }
 
-    const textM = this._worldPxToPointM(snapped);
     const draftTarget = this._draftTargetPx(this._draft);
-    const baseM = draftTarget
-      ? this._worldPxToPointM(draftTarget)
-      : this._draft.pointM;
-    const offsetM = {
-      x: textM.x - (baseM?.x ?? textM.x),
-      y: textM.y - (baseM?.y ?? textM.y),
-    };
+    const offsetM = draftTarget
+      ? textOffsetMFromWorldPx(snapped, draftTarget)
+      : { x: 0, y: 0 };
 
     this._onBeforeChange?.();
     /** @type {object} */
@@ -789,6 +801,7 @@ export class LabelManager {
     } else if (this._draft.pointM) {
       item.pointM = { ...this._draft.pointM };
       item.dynamic = false;
+      if (draftTarget) item.frozenTarget = { x: draftTarget.x, y: draftTarget.y };
     }
     this.items.push(item);
     this._draft = null;

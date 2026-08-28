@@ -19,6 +19,45 @@ import { MATH_PLAIN } from '../math-text.js';
  * @property {string} [bodyId]  scene body id when body-scoped
  */
 
+/**
+ * Compact number for drive expressions (avoids ugly float noise).
+ * @param {number} n
+ */
+function formatDriveNum(n) {
+  if (!isFinite(n)) return '0';
+  const a = Math.abs(n);
+  if (a !== 0 && (a >= 1e4 || a < 1e-4)) return n.toExponential(6).replace(/\.?0+e/, 'e');
+  const s = n.toPrecision(8);
+  return String(Number(s));
+}
+
+/**
+ * Parse F₀·sin(2π f t) style driven-applied expressions.
+ * @param {string|null|undefined} expr
+ * @returns {{ F0: number, fHz: number }|null}
+ */
+export function parseDrivenSinusoid(expr) {
+  const s = String(expr ?? '').replace(/\s+/g, '');
+  if (!s) return null;
+  let m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*sin\(2\*pi\*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*t\)$/i.exec(s);
+  if (m) return { F0: Number(m[1]), fHz: Number(m[2]) };
+  m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*sin\(2\*pi\*t\)$/i.exec(s);
+  if (m) return { F0: Number(m[1]), fHz: 1 };
+  m = /^sin\(2\*pi\*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*t\)$/i.exec(s);
+  if (m) return { F0: 1, fHz: Number(m[1]) };
+  m = /^sin\(2\*pi\*t\)$/i.exec(s);
+  if (m) return { F0: 1, fHz: 1 };
+  return null;
+}
+
+/**
+ * @param {number} F0
+ * @param {number} fHz
+ */
+export function formatDrivenSinusoid(F0, fHz) {
+  return `${formatDriveNum(F0)}*sin(2*pi*${formatDriveNum(fHz)}*t)`;
+}
+
 /** @type {SweepParam[]} */
 export const SWEEP_PARAMS = [
   {
@@ -299,6 +338,84 @@ export function bodyForceFParam(bodyId) {
 }
 
 /**
+ * Drive frequency f (Hz) for a body with drivenApplied F(t) = F₀ sin(2π f t).
+ * Rewrites `drivenAppliedForce` while preserving F₀ when the expr parses.
+ * @param {string} bodyId
+ * @param {object} [opts]
+ * @param {boolean} [opts.preferred]
+ * @returns {SweepParam}
+ */
+export function bodyDrivenForceFreqParam(bodyId, opts = {}) {
+  return {
+    id: `body.${bodyId}.drivenApplied.freqHz`,
+    label: 'f (drive)',
+    unit: 'Hz',
+    group: 'Drive',
+    bodyId,
+    preferred: opts.preferred === true,
+    defaultMin: 0.4,
+    defaultMax: 1.6,
+    defaultCount: 21,
+    apply(doc, value) {
+      const b = doc.bodies?.find(x => x.id === bodyId);
+      if (!b) return;
+      const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
+      const F0 = parsed?.F0 ?? 2;
+      const fHz = Math.max(0, value);
+      b.drivenApplied = true;
+      b.drivenAppliedForce = formatDrivenSinusoid(F0, fHz);
+      if (!b.appliedForce || typeof b.appliedForce !== 'object') {
+        b.appliedForce = { F: 0, thetaDeg: 0 };
+      } else if (!(b.appliedForce.F > 0)) {
+        b.appliedForce = { F: 0, thetaDeg: b.appliedForce.thetaDeg ?? 0 };
+      }
+    },
+    read(doc) {
+      const b = doc.bodies?.find(x => x.id === bodyId);
+      if (!b?.drivenApplied) return null;
+      const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
+      return parsed && isFinite(parsed.fHz) ? parsed.fHz : null;
+    },
+  };
+}
+
+/**
+ * Drive amplitude F₀ (N) for drivenApplied F(t) = F₀ sin(2π f t).
+ * @param {string} bodyId
+ * @returns {SweepParam}
+ */
+export function bodyDrivenForceAmpParam(bodyId) {
+  return {
+    id: `body.${bodyId}.drivenApplied.F0`,
+    label: `${MATH_PLAIN.F}₀ (drive)`,
+    unit: 'N',
+    group: 'Drive',
+    bodyId,
+    defaultMin: 0.5,
+    defaultMax: 5,
+    defaultCount: 10,
+    apply(doc, value) {
+      const b = doc.bodies?.find(x => x.id === bodyId);
+      if (!b) return;
+      const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
+      const fHz = parsed?.fHz ?? 1;
+      const F0 = Math.max(0, value);
+      b.drivenApplied = true;
+      b.drivenAppliedForce = formatDrivenSinusoid(F0, fHz);
+      if (!b.appliedForce || typeof b.appliedForce !== 'object') {
+        b.appliedForce = { F: 0, thetaDeg: 0 };
+      }
+    },
+    read(doc) {
+      const b = doc.bodies?.find(x => x.id === bodyId);
+      if (!b?.drivenApplied) return null;
+      const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
+      return parsed && isFinite(parsed.F0) ? parsed.F0 : null;
+    },
+  };
+}
+
+/**
  * @param {string} bodyId
  * @returns {SweepParam}
  */
@@ -334,8 +451,12 @@ export function paramsForScene(doc, opts = {}) {
   const filterId = opts.bodyId ?? null;
   const list = [];
   const bodies = doc?.bodies ?? [];
-  const preferForce = doc?.meta?.demoId === 'pull-at-angle'
-    || bodies.some(b => b?.appliedForce && b.appliedForce.F > 0);
+  const preferDrive = doc?.meta?.demoId === 'driven-harmonic-oscillator'
+    || bodies.some(b => b?.drivenApplied === true);
+  const preferForce = !preferDrive && (
+    doc?.meta?.demoId === 'pull-at-angle'
+    || bodies.some(b => b?.appliedForce && b.appliedForce.F > 0)
+  );
 
   for (const b of bodies) {
     if (!b?.id) continue;
@@ -343,12 +464,16 @@ export function paramsForScene(doc, opts = {}) {
     if (filterId && b.id !== filterId) continue;
 
     if (b.type === 'box' || b.type === 'ball' || b.type === 'wedge' || b.type === 'point-mass') {
+      if (b.drivenApplied === true || preferDrive) {
+        list.push(bodyDrivenForceFreqParam(b.id, { preferred: preferDrive }));
+        list.push(bodyDrivenForceAmpParam(b.id));
+      }
       list.push(bodyForceThetaParam(b.id, { preferred: preferForce }));
       list.push(bodyForceFParam(b.id));
     }
 
     const speed = Math.hypot(b.velocity?.vx ?? 0, b.velocity?.vy ?? 0);
-    const preferSpeed = !preferForce && speed > 1e-6;
+    const preferSpeed = !preferForce && !preferDrive && speed > 1e-6;
     list.push(bodySpeedParam(b.id, { preferred: preferSpeed }));
     list.push(bodyVelocityThetaParam(b.id));
     list.push(bodyVyParam(b.id));

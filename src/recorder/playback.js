@@ -10,7 +10,7 @@
  */
 
 import Matter from 'matter-js';
-import { createBodyFromSnap } from './replay-bodies.js';
+import { createBodyFromSnap, applyDriveSnapToBody } from './replay-bodies.js';
 
 const { Body } = Matter;
 
@@ -121,6 +121,13 @@ export class Playback {
   _applyFrame(frame) {
     this._syncTopology(frame);
 
+    // Keep engine clock aligned with the scrubbed frame so any live F(t)/τ(t)
+    // eval falls back correctly when a snap omitted drive samples.
+    if (Number.isFinite(frame.t)) {
+      const t0 = this._recorder.recordingStartTime ?? 0;
+      this._engine._simTime = t0 + frame.t;
+    }
+
     const bodyMap = new Map(this._engine.bodies.map(b => [b.id, b]));
     for (const snap of frame.bodies) {
       const body = bodyMap.get(snap.id);
@@ -130,6 +137,7 @@ export class Playback {
       Body.setVelocity(body,          { x: snap.vx, y: snap.vy });
       const w = Number.isFinite(snap.w) ? snap.w : 0;
       Body.setAngularVelocity(body,     w);
+      applyDriveSnapToBody(body, snap);
     }
 
     this._applyConstraints(frame, bodyMap);

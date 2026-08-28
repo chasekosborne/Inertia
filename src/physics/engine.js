@@ -3,8 +3,14 @@ import { BASE_DELTA_MS, METRIC_BASIS_DEFAULT_M, mToPx } from '../units.js';
 import { createMetricBasis } from './bodies.js';
 import { SpringConstraint, RodConstraint, syncMatterConstraintPoints } from './constraints.js';
 import { applyCoulombFriction, snapStaticFrictionRest } from './friction.js';
-import { appliedForceToMatter, getAppliedForce } from './applied-force.js';
+import {
+  appliedForceToMatter,
+  getAppliedForce,
+  isDrivenAppliedForce,
+  solveDrivenAppliedForces,
+} from './applied-force.js';
 import { appliedTorqueToMatter, getAppliedTorque } from './applied-torque.js';
+import { solveDrivenPivots, resetDrivenVisualAngles } from './driven-pivot.js';
 import { ccdStepFraction } from './ccd.js';
 import { installStickyCollisions } from './sticky.js';
 import { installRoundContactSolver } from './circle-contact.js';
@@ -85,7 +91,9 @@ export class PhysicsEngine {
       this._syncStaticConstraintPoints();
       this._solveSprings();
       this._solveAppliedForces();
+      this._solveDrivenAppliedForces();
       this._solveAppliedTorques();
+      this._solveDrivenPivots();
     });
     Events.on(this.engine, 'afterUpdate', () => {
       if (!this._integrating) return;
@@ -155,12 +163,20 @@ export class PhysicsEngine {
     if (!this._integrating) return;
     for (const b of this.bodies) {
       if (!b || b.isStatic) continue;
+      // Driven F(t) replaces constant F while active.
+      if (isDrivenAppliedForce(b)) continue;
       const af = getAppliedForce(b);
       if (!af) continue;
       const { fx, fy } = appliedForceToMatter(af.F, af.thetaDeg);
       if (Math.abs(fx) < 1e-18 && Math.abs(fy) < 1e-18) continue;
       Body.applyForce(b, b.position, { x: fx, y: fy });
     }
+  }
+
+  /** Time-varying applied F(t): see {@link applied-force.js}. */
+  _solveDrivenAppliedForces() {
+    if (!this._integrating) return;
+    if (solveDrivenAppliedForces(this)) this.noteEnergyDissipation();
   }
 
   /** Constant applied torque τ: see {@link applied-torque.js}. */
@@ -175,6 +191,12 @@ export class PhysicsEngine {
       if (Math.abs(tMat) < 1e-18) continue;
       b.torque += tMat;
     }
+  }
+
+  /** Time-varying pivot drive τ(t): see {@link driven-pivot.js}. */
+  _solveDrivenPivots() {
+    if (!this._integrating) return;
+    if (solveDrivenPivots(this)) this.noteEnergyDissipation();
   }
 
   /** Textbook Coulomb friction (see {@link applyCoulombFriction}). */
@@ -314,6 +336,7 @@ export class PhysicsEngine {
   /** Zero accumulated simulation time without clearing the world. */
   resetSimTime() {
     this._simTime = 0;
+    resetDrivenVisualAngles(this);
   }
 
   reset() {

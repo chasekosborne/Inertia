@@ -14,12 +14,17 @@ import {
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
          wedgeVertsCentred, wedgeOutlineStrokePx, ANCHOR_PIVOT_R, ANCHOR_STROKE_PX,
          anchorTriangleLocalVerts } from '../physics/bodies.js';
-import { getAppliedForce } from '../physics/applied-force.js';
-import { getAppliedTorque } from '../physics/applied-torque.js';
 import {
-  bodySpinAngularMomentumSI,
+  getAppliedForce,
+  isDrivenAppliedForce,
+  collectDrivenAppliedAppForces,
+} from '../physics/applied-force.js';
+import { getAppliedTorque } from '../physics/applied-torque.js';
+import { isDrivenPivot, collectDrivenAppForces } from '../physics/driven-pivot.js';
+import {
+  matterOmegaToDisplay,
   outOfPlaneGlyphRadius,
-  outOfPlaneLGlyphRadius,
+  outOfPlaneOmegaGlyphRadius,
 } from '../physics/angular.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { springPathProps } from './spring-path.js';
@@ -115,6 +120,37 @@ function _distPointToSeg(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+/** Driven-pivot hinge: black/white quadrant disk (same size as normal pivot). */
+export function appendDrivenPivotGlyph(parent, bodyId, angleRad, r = ANCHOR_PIVOT_R) {
+  const deg = (Number(angleRad) || 0) * 180 / Math.PI;
+  const clipId = `driven-pivot-clip-${bodyId}`;
+  const defs = el('defs');
+  const clip = el('clipPath', { id: clipId });
+  clip.appendChild(el('circle', { cx: 0, cy: 0, r }));
+  defs.appendChild(clip);
+  parent.appendChild(defs);
+
+  const disk = el('g', {
+    transform: `rotate(${deg})`,
+    'clip-path': `url(#${clipId})`,
+    class: 'driven-pivot-disk',
+  });
+  // Pattern matches reference: TL+BR black, TR+BL white (SVG +y down).
+  disk.appendChild(el('circle', { cx: 0, cy: 0, r, fill: '#fff' }));
+  disk.appendChild(el('rect', {
+    x: -r, y: -r, width: r, height: r, fill: '#000',
+  }));
+  disk.appendChild(el('rect', {
+    x: 0, y: 0, width: r, height: r, fill: '#000',
+  }));
+  parent.appendChild(disk);
+  parent.appendChild(el('circle', {
+    cx: 0, cy: 0, r,
+    fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': 2,
+    class: 'body-shape',
+  }));
+}
+
 export class SvgRenderer {
   /**
    * @param {SVGSVGElement} svg
@@ -203,7 +239,7 @@ export class SvgRenderer {
     this._restackLayers();
   }
 
-  /** Preserve paint order: leaders → constraints → bodies → planar F/v → angular L/τ → labels → UI. */
+  /** Preserve paint order: leaders → constraints → bodies → planar F/v → angular ω/τ → labels → UI. */
   _restackLayers() {
     for (const layer of [
       this._gridLayer,
@@ -311,7 +347,7 @@ export class SvgRenderer {
     this._leaderLayer.setAttribute('pointer-events', 'none');
     this._constraintLayer = this._addLayer('layer-constraints');
     this._bodyLayer       = this._addLayer('layer-bodies');
-    // Planar F/v above fills so tips stay visible; L / τ above those at the COM.
+    // Planar F/v above fills so tips stay visible; ω / τ above those at the COM.
     this._vectorLayer     = this._addLayer('layer-vectors');
     this._angularVectorLayer = this._addLayer('layer-angular-vectors');
     this._angularVectorLayer.setAttribute('pointer-events', 'none');
@@ -495,13 +531,14 @@ export class SvgRenderer {
           const r = meta?.radius ?? part._radius ?? part.circleRadius ?? 10;
           const hollow = meta?.hollow === true || part._hollow === true;
           const s = circleRingStrokePx(r);
-          const inkFill = pType === 'ball' || pType === 'point-mass';
+          // Circle (point-mass): box-grey fill. Point (ball): solid ink.
+          const greyFill = pType === 'point-mass' && !hollow;
           g.appendChild(el('circle', {
             cx: part.position.x, cy: part.position.y,
-            r: hollow ? Math.max(0.5, r - s / 2) : r,
-            fill: hollow ? 'none' : (inkFill ? STYLE.ink : BOX_FILL_HEX),
-            stroke: hollow ? STYLE.ink : (inkFill ? 'none' : BOX_STROKE_HEX),
-            'stroke-width': hollow || !inkFill ? s : 0,
+            r: hollow || greyFill ? Math.max(0.5, r - s / 2) : r,
+            fill: hollow ? 'none' : (greyFill ? BOX_FILL_HEX : STYLE.ink),
+            stroke: hollow ? STYLE.ink : (greyFill ? BOX_STROKE_HEX : 'none'),
+            'stroke-width': hollow || greyFill ? s : 0,
             class: 'body-shape',
             'data-part-index': partIndex,
           }));
@@ -551,15 +588,15 @@ export class SvgRenderer {
         }));
         return;
       }
-      // Point: filled particle (ink); hollow ring when body._hollow.
+      // Circle: box-grey fill (hollow ring when body._hollow).
       const r = body._radius ?? DEFAULT_CIRCLE_R;
       const s = circleRingStrokePx(r);
       const hollow = body._hollow === true;
       const circle = el('circle', {
-        cx: 0, cy: 0, r: hollow ? Math.max(0.5, r - s / 2) : r,
-        fill: hollow ? 'none' : STYLE.ink,
-        stroke: hollow ? STYLE.ink : 'none',
-        'stroke-width': hollow ? s : 0,
+        cx: 0, cy: 0, r: Math.max(0.5, r - s / 2),
+        fill: hollow ? 'none' : BOX_FILL_HEX,
+        stroke: hollow ? STYLE.ink : BOX_STROKE_HEX,
+        'stroke-width': s,
         class: hollow ? 'body-shape circle-ring' : 'body-shape point-body',
       });
       g.appendChild(circle);
@@ -630,7 +667,7 @@ export class SvgRenderer {
         class: 'body-shape wedge-body wedge-ring',
       }));
     } else if (type === 'anchor') {
-      this._drawAnchor(g);
+      this._drawAnchor(g, body);
       return;
     } else if (type === 'ground') {
       const w = body._width  ?? 400;
@@ -657,17 +694,22 @@ export class SvgRenderer {
     }
   }
 
-  _drawAnchor(g) {
+  _drawAnchor(g, body) {
     const { apex, left, right } = anchorTriangleLocalVerts();
     g.appendChild(el('polygon', {
       points: `${apex.x},${apex.y} ${left.x},${left.y} ${right.x},${right.y}`,
       fill: 'none', stroke: STYLE.anchorStroke, 'stroke-width': ANCHOR_STROKE_PX,
       class: 'body-shape',
     }));
-    g.appendChild(el('circle', {
-      cx: 0, cy: 0, r: ANCHOR_PIVOT_R,
-      fill: '#fff', stroke: STYLE.anchorStroke, 'stroke-width': 2,
-    }));
+
+    if (isDrivenPivot(body)) {
+      appendDrivenPivotGlyph(g, body.id, body._drivenVisualAngle ?? 0);
+    } else {
+      g.appendChild(el('circle', {
+        cx: 0, cy: 0, r: ANCHOR_PIVOT_R,
+        fill: '#fff', stroke: STYLE.anchorStroke, 'stroke-width': 2,
+      }));
+    }
   }
 
   // ─── Constraints ───────────────────────────────────────────────
@@ -857,6 +899,8 @@ export class SvgRenderer {
     this._vectorObstacles = this._collectVectorObstacles(bodies);
     /** @type {Set<string>} */
     const labelKeysSeen = new Set();
+    const drivenForces = collectDrivenAppForces(this.engine);
+    const drivenAppliedForces = collectDrivenAppliedAppForces(this.engine);
 
     for (const b of bodies) {
       if (b.isStatic) continue;
@@ -897,16 +941,42 @@ export class SvgRenderer {
         });
       }
 
-      // ── Applied pull F (blue): constant force at θ above +x ──
-      const af = getAppliedForce(b);
-      if (af) {
-        const rad = af.thetaDeg * Math.PI / 180;
-        const len = af.F * getForcePxPerN();
-        // Matter y-down: +θ (up) → negative y tip
+      // ── Driven applied F(t) as F_app (takes precedence over constant F) ──
+      const daf = drivenAppliedForces.get(b.id);
+      if (daf && daf.F > 1e-12) {
+        const rad = daf.thetaDeg * Math.PI / 180;
+        const len = daf.F * getForcePxPerN();
         const fex = px + Math.cos(rad) * len;
         const fey = py - Math.sin(rad) * len;
-        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F', {
-          stickyKey: `${b.id}:F`,
+        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F_app', {
+          stickyKey: `${b.id}:F_app_driven`,
+          _labelKeysSeen: labelKeysSeen,
+        });
+      } else if (!isDrivenAppliedForce(b)) {
+        // ── Applied pull F (red): constant force at θ above +x ──
+        const af = getAppliedForce(b);
+        if (af) {
+          const rad = af.thetaDeg * Math.PI / 180;
+          const len = af.F * getForcePxPerN();
+          // Matter y-down: +θ (up) → negative y tip
+          const fex = px + Math.cos(rad) * len;
+          const fey = py - Math.sin(rad) * len;
+          this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F', {
+            stickyKey: `${b.id}:F`,
+            _labelKeysSeen: labelKeysSeen,
+          });
+        }
+      }
+
+      // ── Driven-pivot linear force F_app = τ / r (tangential) at COM ──
+      const df = drivenForces.get(b.id);
+      if (df && df.F > 1e-12) {
+        const rad = df.thetaDeg * Math.PI / 180;
+        const len = df.F * getForcePxPerN();
+        const fex = px + Math.cos(rad) * len;
+        const fey = py - Math.sin(rad) * len;
+        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F_app', {
+          stickyKey: `${b.id}:F_app`,
           _labelKeysSeen: labelKeysSeen,
         });
       }
@@ -935,16 +1005,16 @@ export class SvgRenderer {
         });
       }
 
-      // ── Spin angular momentum L (⊙/⊗) on top of the body fill ──
-      let hasL = false;
+      // ── Angular velocity ω (⊙/⊗) on top of the body fill ──
+      let hasOmega = false;
       const locked = b.inertia === Infinity || b._lockRotation === true;
       if (!locked) {
-        const L = bodySpinAngularMomentumSI(b);
-        hasL = L != null && Math.abs(L) > 1e-6;
-        if (hasL) {
-          const r = outOfPlaneLGlyphRadius(Math.abs(L));
-          this._drawOutOfPlaneGlyph(px, py, Math.sign(L), STYLE.velColor, r, 'L', {
-            stickyKey: `${b.id}:L`,
+        const omega = matterOmegaToDisplay(b.angularVelocity || 0);
+        hasOmega = Math.abs(omega) > 1e-6;
+        if (hasOmega) {
+          const r = outOfPlaneOmegaGlyphRadius(Math.abs(omega));
+          this._drawOutOfPlaneGlyph(px, py, Math.sign(omega), STYLE.velColor, r, 'ω', {
+            stickyKey: `${b.id}:omega`,
             _labelKeysSeen: labelKeysSeen,
           });
         }
@@ -952,9 +1022,9 @@ export class SvgRenderer {
       const tau = getAppliedTorque(b);
       if (tau != null && Math.abs(tau) > 1e-9) {
         const r = outOfPlaneGlyphRadius(Math.abs(tau), 3.5, 1.4, 8);
-        // Keep τ off the COM when L is shown so the glyphs do not stack.
-        const ox = hasL ? -(r + 8) : 0;
-        const oy = hasL ? -(r + 5) : 0;
+        // Keep τ off the COM when ω is shown so the glyphs do not stack.
+        const ox = hasOmega ? -(r + 8) : 0;
+        const oy = hasOmega ? -(r + 5) : 0;
         this._drawOutOfPlaneGlyph(px + ox, py + oy, Math.sign(tau), STYLE.forceColor, r, 'τ', {
           stickyKey: `${b.id}:tau`,
           _labelKeysSeen: labelKeysSeen,

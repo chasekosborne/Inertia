@@ -280,7 +280,8 @@ export function applyHangingChainTranslation(chain, rootBody) {
  * the bob on a circular arc.
  *
  * All other springs omit arc guidance — the body drags freely while rest length
- * stays fixed and the coil visually extends or compresses. Ropes use pin / segment drag.
+ * stays fixed and the coil visually extends or compresses. Ropes clamp host drags to
+ * rest length and reproject segments (see syncRopesAfterHostMove).
  *
  * Prefers a fixed pivot (world / static anchor) when present — e.g. the upper
  * bob of a double pendulum. Otherwise pivots about the other dynamic body on

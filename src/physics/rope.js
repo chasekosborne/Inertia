@@ -803,6 +803,99 @@ export function ropeRestLengthPx(engine, ropeId) {
 }
 
 /**
+ * Rope ids whose end node is pinned to `body`.
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {import('matter-js').Body} body
+ * @returns {string[]}
+ */
+export function ropeIdsHostedBy(engine, body) {
+  if (!engine || !body) return [];
+  const ids = new Set();
+  for (const n of engine.bodies ?? []) {
+    if (!n._ropeSegment || !n._ropeId) continue;
+    const h = n._ropeHost?.body;
+    if (h === body || h?.id === body.id) ids.add(n._ropeId);
+  }
+  return [...ids];
+}
+
+/**
+ * Which end (`A`/`B`) of `ropeId` is pinned to `body`, or null.
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {string} ropeId
+ * @param {import('matter-js').Body} body
+ * @returns {'A'|'B'|null}
+ */
+export function ropeHostEndWhich(engine, ropeId, body) {
+  if (!body) return null;
+  for (const which of /** @type {const} */ (['A', 'B'])) {
+    const host = getRopeEndAttachment(engine, ropeId, which)?.body;
+    if (host === body || host?.id === body.id) return which;
+  }
+  return null;
+}
+
+/**
+ * If `body` hosts a rope whose other end is pinned, pull the body back so the
+ * attach point stays within rest length (same disk clamp as dragging a rope end).
+ *
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {import('matter-js').Body} body
+ * @returns {boolean} true if the body was moved
+ */
+export function clampHostBodyForRopeRest(engine, body) {
+  if (!engine || !body) return false;
+  let moved = false;
+  for (const ropeId of ropeIdsHostedBy(engine, body)) {
+    const which = ropeHostEndWhich(engine, ropeId, body);
+    if (!which || !ropeOtherEndPinned(engine, ropeId, which)) continue;
+    const local = getRopeEndAttachment(engine, ropeId, which)?.local ?? { x: 0, y: 0 };
+    const world = _attachWorld(body, local);
+    const clamped = clampRopeTipToRest(engine, ropeId, which, world.x, world.y);
+    if (!clamped.clamped) continue;
+    const θ = body.angle;
+    const cosθ = Math.cos(θ);
+    const sinθ = Math.sin(θ);
+    const lax = cosθ * local.x - sinθ * local.y;
+    const lay = sinθ * local.x + cosθ * local.y;
+    Body.setPosition(body, { x: clamped.x - lax, y: clamped.y - lay });
+    Body.setVelocity(body, { x: 0, y: 0 });
+    body.force.x = 0;
+    body.force.y = 0;
+    body.torque = 0;
+    moved = true;
+  }
+  return moved;
+}
+
+/**
+ * Reproject every rope pinned to `body` (or just snap pins when none).
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {import('matter-js').Body} body
+ */
+export function enforceRopesForHost(engine, body) {
+  if (!engine || !body) return;
+  const ids = ropeIdsHostedBy(engine, body);
+  if (!ids.length) {
+    snapRopePins(engine);
+    return;
+  }
+  for (const id of ids) enforceRopeLength(engine, id);
+}
+
+/**
+ * Setup drag/rotate of a host body: clamp to rest length, then reproject segments
+ * so the chain cannot stretch (mirrors rope-end handle behaviour).
+ *
+ * @param {import('./engine.js').PhysicsEngine} engine
+ * @param {import('matter-js').Body} body
+ */
+export function syncRopesAfterHostMove(engine, body) {
+  clampHostBodyForRopeRest(engine, body);
+  enforceRopesForHost(engine, body);
+}
+
+/**
  * Setup-time inextensible projection: bilateral link lengths, hosts frozen.
  * Call after editor moves so the chain cannot be left stretched.
  *

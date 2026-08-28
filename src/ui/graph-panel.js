@@ -33,14 +33,14 @@ import {
   unwrapAngleStep,
 } from './measure-eval.js';
 
-/** @typedef {'x'|'y'|'vx'|'vy'|'px'|'py'|'theta'|'ptheta'} ObservableId */
+/** @typedef {'x'|'y'|'vx'|'vy'|'px'|'py'|'theta'|'ptheta'|'Fapp'|'tau'} ObservableId */
 /** @typedef {'time'|'phase'|'sweep'} GraphMode */
 /** @typedef {'body'|'measurement'} GraphSourceKind */
 /** @typedef {'draw'|'playback'} GraphExportAnimMode */
 
 /** @typedef {{ t0: number, t1: number, v0: number, v1: number }} GraphView */
 
-/** @type {{ id: ObservableId, label: string, unit: string }[]} */
+/** @type {{ id: ObservableId, label: string, unit: string, when?: 'drivenApplied'|'drivenTorque' }[]} */
 export const GRAPH_OBSERVABLES = [
   { id: 'x',  label: 'x',           unit: 'm' },
   { id: 'y',  label: 'y',           unit: 'm' },
@@ -49,12 +49,27 @@ export const GRAPH_OBSERVABLES = [
   { id: 'px', label: 'pₓ',          unit: 'kg·m/s' },
   { id: 'py', label: 'pᵧ',          unit: 'kg·m/s' },
   { id: 'theta',  label: MATH_PLAIN.theta, unit: 'rad' },
-  { id: 'ptheta', label: 'pθ',            unit: 'kg·m²/s' },
+  { id: 'ptheta', label: MATH_PLAIN.ptheta, unit: 'kg·m²/s' },
+  { id: 'Fapp', label: MATH_PLAIN.Fapp, unit: 'N', when: 'drivenApplied' },
+  { id: 'tau',  label: MATH_PLAIN.tau, unit: 'N·m', when: 'drivenTorque' },
 ];
+
+/**
+ * Observables shown in the graph menu for a given track.
+ * @param {boolean|{ drivenApplied?: boolean, drivenTorque?: boolean }} [opts]
+ */
+export function graphObservablesForTrack(opts = false) {
+  const flags = typeof opts === 'boolean' ? { drivenApplied: opts } : (opts ?? {});
+  return GRAPH_OBSERVABLES.filter(o => {
+    if (o.when === 'drivenApplied') return !!flags.drivenApplied;
+    if (o.when === 'drivenTorque') return !!flags.drivenTorque;
+    return true;
+  });
+}
 
 const MIN_WIN_W = 240;
 const MIN_WIN_H = 180;
-const PAD = { l: 44, r: 12, t: 12, b: 28 };
+const PAD = { l: 52, r: 12, t: 12, b: 36 };
 /**
  * On-screen plot short side used as the 1× reference for export ink.
  * At 1440p (~1440 short side) this yields ~4× strokes/fonts so lines stay readable.
@@ -114,6 +129,23 @@ export function sampleObservable(frame, trackId, obs) {
     const pivot = findPendulumPivotInFrame(frame, trackId);
     if (!pivot) return null;
     return _samplePendulumObservable(frame, hit, pivot, obs);
+  }
+  if (obs === 'Fapp') {
+    const body = frame.bodies.find(b => b.id === trackId);
+    if (!body) return null;
+    // Accept frames that stored a finite sample even if the flag was omitted.
+    if (body.drivenApplied === true || Number.isFinite(body.drivenAppliedF)) {
+      return Number.isFinite(body.drivenAppliedF) ? body.drivenAppliedF : null;
+    }
+    return null;
+  }
+  if (obs === 'tau') {
+    const body = frame.bodies.find(b => b.id === trackId);
+    if (!body) return null;
+    if (body.driven === true || Number.isFinite(body.drivenTorque)) {
+      return Number.isFinite(body.drivenTorque) ? body.drivenTorque : null;
+    }
+    return null;
   }
   return null;
 }
@@ -209,7 +241,7 @@ export function findPendulumPivotInFrame(frame, trackId) {
 }
 
 /**
- * Pendulum angle θ (rad) and conjugate angular momentum pθ about the detected pivot.
+ * Pendulum angle θ (rad) and conjugate angular momentum p_θ about the detected pivot.
  * θ is measured from downward vertical, positive counter-clockwise (+y up display frame).
  * @param {object} frame
  * @param {{ x: number, y: number, vx: number, vy: number, mass: number }} hit
@@ -543,6 +575,37 @@ export function buildMeasurementPhaseSeries(frames, measX, measY, sceneDoc = nul
     pts.push({ t: x, v: y, i });
   }
   return pts;
+}
+
+/**
+ * Split a series into contiguous segments, breaking lines at wrapped-angle jumps
+ * (|Δ| > period/2) so periodic axes do not draw streaks across the plot.
+ * @param {{ t: number, v: number }[]} series
+ * @param {{ xPeriod?: number|null, yPeriod?: number|null }|null} periods
+ * @returns {{ t: number, v: number }[][]}
+ */
+export function splitSeriesAtPeriodicJumps(series, periods) {
+  if (!series?.length) return [];
+  if (!periods) return [series];
+  const { xPeriod, yPeriod } = periods;
+  if (!xPeriod && !yPeriod) return [series];
+  const halfX = xPeriod ? xPeriod * 0.5 : null;
+  const halfY = yPeriod ? yPeriod * 0.5 : null;
+
+  /** @type {{ t: number, v: number }[][]} */
+  const segments = [[]];
+  for (let i = 0; i < series.length; i++) {
+    if (i > 0) {
+      const prev = series[i - 1];
+      const cur = series[i];
+      let jump = false;
+      if (halfX != null && Math.abs(cur.t - prev.t) > halfX) jump = true;
+      if (halfY != null && Math.abs(cur.v - prev.v) > halfY) jump = true;
+      if (jump) segments.push([]);
+    }
+    segments[segments.length - 1].push(series[i]);
+  }
+  return segments.filter(seg => seg.length > 0);
 }
 
 /**
@@ -1031,6 +1094,8 @@ class GraphWindow {
     this.measurementIdY = cfg.measurementIdY ?? null;
     /** Unwrap θ past ±π in time / phase plots (body observable). */
     this.unwrapAngle = false;
+    /** True after the user manually changes the Obs dropdown. */
+    this._userPickedObs = false;
     this._selectedIndex = null;
     this._series = [];
     /** @type {GraphView|null} */
@@ -1058,6 +1123,12 @@ class GraphWindow {
     this._sweepParamId = null;
     /** @type {string} */
     this._sweepParamLabel = '';
+    /**
+     * Persisted sweep form (per graph window).
+     * `ranges` stores From/To/Runs keyed by independent SweepParam id.
+     * @type {{ indepId: string, depId: string, ranges: Record<string, { min: number, max: number, count: number }> }}
+     */
+    this._sweepPrefs = { indepId: '', depId: '', ranges: {} };
 
     /** @type {import('../fit/types.js').FitResult|null} */
     this._fitResult = null;
@@ -1119,12 +1190,10 @@ class GraphWindow {
     this._bodySelect = _el('select', { className: 'graph-select', title: 'Source', 'aria-label': 'Source' });
     this._bodySelect.addEventListener('change', () => this._onBodyChange());
     this._obsSelect = _el('select', { className: 'graph-select graph-select-math', title: 'Observable', 'aria-label': 'Observable' });
-    for (const o of GRAPH_OBSERVABLES) {
-      this._obsSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
-    }
-    this._obsSelect.value = this.observable;
+    this._fillObsSelect({ preferDrive: !this._userPickedObs && (this.observable === 'y' || this.observable === 'x' || !this.observable) });
     this._obsSelect.addEventListener('change', () => {
       this.observable = /** @type {ObservableId} */ (this._obsSelect.value);
+      this._userPickedObs = true;
       this._selectedIndex = null;
       this._syncUnwrapChrome();
       this._clearFit();
@@ -1273,7 +1342,17 @@ class GraphWindow {
     this._minInput = _el('input', { type: 'number', className: 'graph-num', step: 'any', value: '4' });
     this._maxInput = _el('input', { type: 'number', className: 'graph-num', step: 'any', value: '20' });
     this._countInput = _el('input', { type: 'number', className: 'graph-num', min: '2', max: '64', step: '1', value: '9' });
-    this._indepSelect.addEventListener('change', () => this._onIndepChange());
+    this._indepSelect.addEventListener('change', () => {
+      this._restoreSweepRange();
+      this._persistSweepPrefs();
+    });
+    this._depSelect.addEventListener('change', () => this._persistSweepPrefs());
+    for (const el of [this._minInput, this._maxInput, this._countInput]) {
+      el.addEventListener('change', () => {
+        this._persistSweepRange();
+        this._persistSweepPrefs();
+      });
+    }
     form.append(
       _sweepField('Independent', this._indepSelect),
       _sweepField('Dependent', this._depSelect),
@@ -1545,11 +1624,111 @@ class GraphWindow {
     return this._trackIsOneDof();
   }
 
+  /**
+   * Extra drive observables available for the selected body.
+   * @returns {{ drivenApplied: boolean, drivenTorque: boolean }}
+   */
+  _obsAvailability() {
+    return {
+      drivenApplied: this._trackHasDrivenApplied(),
+      drivenTorque: this._trackHasDrivenTorque(),
+    };
+  }
+
+  /**
+   * True when the selected body has a driven applied force F(t).
+   * Checks the live engine first, then recorded frames / baseline scene.
+   */
+  _trackHasDrivenApplied() {
+    if (this.sourceKind === 'measurement' || this.trackId == null) return false;
+    const trackId = this.trackId;
+
+    const engine = this.host._opts.getEngine?.();
+    if (engine?.bodies) {
+      const live = engine.bodies.find(b => b.id === trackId);
+      if (live?._drivenApplied === true && !live.isStatic) return true;
+    }
+
+    const frames = this.host._opts.getFrames?.() ?? [];
+    for (const f of frames) {
+      const b = f.bodies?.find(x => x.id === trackId);
+      if (b?.drivenApplied === true) return true;
+    }
+
+    const doc = this.host._opts.getBaselineScene?.();
+    const sceneId = this._sceneBodyId();
+    if (doc && sceneId) {
+      const bd = (doc.bodies ?? []).find(b => b.id === sceneId);
+      if (bd?.drivenApplied === true) return true;
+    }
+    return false;
+  }
+
+  /**
+   * True when the selected source is a driven pivot with τ(t).
+   */
+  _trackHasDrivenTorque() {
+    if (this.sourceKind === 'measurement' || this.trackId == null) return false;
+    const trackId = this.trackId;
+
+    const engine = this.host._opts.getEngine?.();
+    if (engine?.bodies) {
+      const live = engine.bodies.find(b => b.id === trackId);
+      if (live?._newtonType === 'anchor' && live._driven === true) return true;
+    }
+
+    const frames = this.host._opts.getFrames?.() ?? [];
+    for (const f of frames) {
+      const b = f.bodies?.find(x => x.id === trackId);
+      if (b?.driven === true && (b.type === 'anchor' || Number.isFinite(b.drivenTorque))) return true;
+    }
+
+    const doc = this.host._opts.getBaselineScene?.();
+    const sceneId = this._sceneBodyId();
+    if (doc && sceneId) {
+      const bd = (doc.bodies ?? []).find(b => b.id === sceneId);
+      if (bd?.type === 'anchor' && bd.driven === true) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Rebuild the time-series observable dropdown for the current body.
+   * @param {{ preferDrive?: boolean }} [opts]  When true, select τ / Fₐₚₚ if available
+   */
+  _fillObsSelect(opts = {}) {
+    if (!this._obsSelect) return;
+    const preferDrive = opts.preferDrive === true;
+    const prev = this.observable;
+    const flags = this._obsAvailability();
+    const list = graphObservablesForTrack(flags);
+    this._obsSelect.innerHTML = '';
+    for (const o of list) {
+      this._obsSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
+    }
+    const stillValid = list.some(o => o.id === prev);
+    const pickDrive = () => {
+      if (flags.drivenTorque && list.some(o => o.id === 'tau')) return 'tau';
+      if (flags.drivenApplied && list.some(o => o.id === 'Fapp')) return 'Fapp';
+      return null;
+    };
+    if (preferDrive || !stillValid) {
+      this.observable = /** @type {ObservableId} */ (
+        pickDrive()
+        ?? (stillValid ? prev : (list[1]?.id ?? list[0]?.id ?? 'y'))
+      );
+    } else {
+      this.observable = prev;
+    }
+    this._obsSelect.value = this.observable;
+  }
+
   _fillBodyPhaseObsSelects() {
     if (!this._obsXSelect || !this._obsYSelect) return;
     this._obsXSelect.innerHTML = '';
     this._obsYSelect.innerHTML = '';
-    for (const o of GRAPH_OBSERVABLES) {
+    const list = graphObservablesForTrack(this._obsAvailability());
+    for (const o of list) {
       this._obsXSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
       this._obsYSelect.appendChild(_el('option', { value: o.id }, `${o.label} (${o.unit})`));
     }
@@ -1665,6 +1844,18 @@ class GraphWindow {
     }
     if (wasPhase && !this._canEnterPhase()) {
       this.mode = 'time';
+    }
+    this._userPickedObs = false;
+    this._fillObsSelect({ preferDrive: true });
+    if (this.sourceKind === 'body' && this.mode === 'phase') {
+      const x = this.phaseObsX;
+      const y = this.phaseObsY;
+      this._fillBodyPhaseObsSelects();
+      const list = graphObservablesForTrack(this._obsAvailability());
+      this.phaseObsX = list.some(o => o.id === x) ? x : (list[0]?.id ?? 'x');
+      this.phaseObsY = list.some(o => o.id === y) ? y : (list.find(o => o.id === 'px')?.id ?? list[1]?.id ?? 'y');
+      if (this._obsXSelect) this._obsXSelect.value = this.phaseObsX;
+      if (this._obsYSelect) this._obsYSelect.value = this.phaseObsY;
     }
     this._applyModeChrome();
     this._selectedIndex = null;
@@ -2428,6 +2619,7 @@ class GraphWindow {
       this.sourceKind = 'body';
       this.measurementId = null;
       this.measurementIdY = null;
+      this._fillObsSelect();
       return;
     }
 
@@ -2503,6 +2695,7 @@ class GraphWindow {
       this.trackId = null;
       this._bodySelect.value = `meas:${prevMeas}`;
       if (this.mode === 'phase') this._ensureMeasPhasePair();
+      this._fillObsSelect();
       this._applyModeChrome();
       return;
     }
@@ -2516,6 +2709,7 @@ class GraphWindow {
       const entry = bodies.find(b => (b.trackId ?? b.id) === prevTrack);
       this.bodyId = entry?.id ?? prevTrack;
       this._bodySelect.value = String(prevTrack);
+      this._fillObsSelect();
       this._applyModeChrome();
       return;
     }
@@ -2538,6 +2732,7 @@ class GraphWindow {
       this._bodySelect.value = `meas:${this.measurementId}`;
       if (this.mode === 'phase') this._ensureMeasPhasePair();
     }
+    this._fillObsSelect();
     this._applyModeChrome();
   }
 
@@ -2580,7 +2775,8 @@ class GraphWindow {
         ?? preferIndep;
     }
     if (!preferIndep) {
-      preferIndep = params.find(p => p.id.includes('appliedForce.thetaDeg'))?.id
+      preferIndep = params.find(p => p.id.includes('drivenApplied.freqHz'))?.id
+        ?? params.find(p => p.id.includes('appliedForce.thetaDeg'))?.id
         ?? params.find(p => p.id.includes('velocity.speed'))?.id
         ?? params.find(p => p.id.includes('velocity.vy'))?.id
         ?? params[0]?.id
@@ -2592,28 +2788,68 @@ class GraphWindow {
       ?? metrics.find(met => met.id === `meas:min:${this.measurementId}`)?.id
     ))
       ?? metrics.find(met => met.preferred)?.id
+      ?? metrics.find(met => String(met.id).startsWith('amp_x:'))?.id
       ?? metrics.find(met => String(met.id).startsWith('F_slip'))?.id
       ?? metrics.find(met => String(met.id).startsWith('max_y:'))?.id
       ?? metrics[0]?.id
       ?? '';
 
     if (params.some(p => p.id === prevIndep)) this._indepSelect.value = prevIndep;
-    else this._indepSelect.value = preferIndep;
+    else if (this._sweepPrefs.indepId && params.some(p => p.id === this._sweepPrefs.indepId)) {
+      this._indepSelect.value = this._sweepPrefs.indepId;
+    } else this._indepSelect.value = preferIndep;
 
     if (metrics.some(met => met.id === prevDep)) this._depSelect.value = prevDep;
-    else this._depSelect.value = preferDep;
+    else if (this._sweepPrefs.depId && metrics.some(met => met.id === this._sweepPrefs.depId)) {
+      this._depSelect.value = this._sweepPrefs.depId;
+    } else this._depSelect.value = preferDep;
 
-    this._onIndepChange();
+    this._restoreSweepRange();
+    this._persistSweepPrefs();
   }
 
-  _onIndepChange() {
+  /** Save independent/dependent ids from the sweep form. */
+  _persistSweepPrefs() {
+    this._sweepPrefs.indepId = this._indepSelect?.value ?? '';
+    this._sweepPrefs.depId = this._depSelect?.value ?? '';
+  }
+
+  /** Store From/To/Runs for the current independent variable. */
+  _persistSweepRange() {
+    const id = this._indepSelect?.value;
+    if (!id) return;
+    const min = parseFloat(this._minInput?.value ?? '');
+    const max = parseFloat(this._maxInput?.value ?? '');
+    const count = parseInt(this._countInput?.value ?? '', 10);
+    if (![min, max, count].every(Number.isFinite) || count < 2) return;
+    this._sweepPrefs.ranges[id] = { min, max, count };
+  }
+
+  /** Restore saved From/To/Runs, or param defaults on first use. */
+  _restoreSweepRange() {
     const doc = this.host._opts.getBaselineScene?.();
     if (!doc) return;
     const sceneBodyId = this._sceneBodyId();
-    const filterBody = sceneBodyId;
-    const param = paramsForScene(doc, { bodyId: filterBody })
+    const param = paramsForScene(doc, { bodyId: sceneBodyId })
       .find(p => p.id === this._indepSelect.value);
     if (!param) return;
+
+    const saved = this._sweepPrefs.ranges[param.id];
+    if (saved) {
+      this._minInput.value = String(saved.min);
+      this._maxInput.value = String(saved.max);
+      this._countInput.value = String(saved.count);
+      return;
+    }
+    this._applyIndepDefaults(param, doc);
+    this._persistSweepRange();
+  }
+
+  /**
+   * @param {import('../experiment/params.js').SweepParam} param
+   * @param {object} doc
+   */
+  _applyIndepDefaults(param, doc) {
     if (param.defaultMin != null) this._minInput.value = String(param.defaultMin);
     if (param.defaultMax != null) this._maxInput.value = String(param.defaultMax);
     if (param.defaultCount != null) this._countInput.value = String(param.defaultCount);
@@ -2653,6 +2889,9 @@ class GraphWindow {
       this._updateReadoutOnly();
       return;
     }
+
+    this._persistSweepRange();
+    this._persistSweepPrefs();
 
     if (!this._runner) this._runner = new ExperimentRunner();
 
@@ -2863,7 +3102,10 @@ class GraphWindow {
       this._view = null;
       this._autoView = true;
       this._clearFit();
-      this._drawEmpty('Body not present in recording');
+      const driveMsg = (this.observable === 'Fapp' || this.observable === 'tau')
+        ? 'No drive samples in this recording — capture again with Driven enabled'
+        : 'Body not present in recording';
+      this._drawEmpty(driveMsg);
       return;
     }
 
@@ -2990,21 +3232,9 @@ class GraphWindow {
         unit: '',
         xLabel: this._sweepXLabel,
       }, this._view);
-    } else if (this.mode === 'phase') {
+    } else {
       const scrub = this.host._opts.getScrubIndex();
       this._drawPlot(this._series, scrub, this._obsMetaForDraw(), this._view);
-    } else if (this.sourceKind === 'measurement') {
-      const m = this._selectedMeasurement();
-      const scrub = this.host._opts.getScrubIndex();
-      this._drawPlot(this._series, scrub, {
-        id: `meas:${this.measurementId}`,
-        label: m ? measurementDisplayLabel(m) : (this.measurementId || 'meas'),
-        unit: m?.kind === 'length' ? 'm' : '°',
-      }, this._view);
-    } else {
-      const obsMeta = GRAPH_OBSERVABLES.find(o => o.id === this.observable) ?? GRAPH_OBSERVABLES[1];
-      const scrub = this.host._opts.getScrubIndex();
-      this._drawPlot(this._series, scrub, obsMeta, this._view);
     }
     if (this._hoverPt) this._drawHoverOverlay();
   }
@@ -3079,6 +3309,47 @@ class GraphWindow {
       };
     }
     return GRAPH_OBSERVABLES.find(o => o.id === this.observable) ?? GRAPH_OBSERVABLES[1];
+  }
+
+  /**
+   * Wrapped periodic axis periods for line-segment splitting (unwrap off).
+   * @returns {{ xPeriod?: number, yPeriod?: number }|null}
+   */
+  _wrapPeriodsForPlot() {
+    if (this.unwrapAngle) return null;
+
+    if (this.mode === 'phase') {
+      if (this.sourceKind === 'measurement') {
+        const mx = this._selectedMeasurement();
+        const my = this._selectedMeasurementY();
+        /** @type {{ xPeriod?: number, yPeriod?: number }} */
+        const out = {};
+        if (mx?.kind === 'angle' && mx.signed !== false && mx.continuous !== true) {
+          out.xPeriod = 360;
+        }
+        if (my?.kind === 'angle' && my.signed !== false && my.continuous !== true) {
+          out.yPeriod = 360;
+        }
+        return out.xPeriod || out.yPeriod ? out : null;
+      }
+      /** @type {{ xPeriod?: number, yPeriod?: number }} */
+      const out = {};
+      if (this.phaseObsX === 'theta') out.xPeriod = 2 * Math.PI;
+      if (this.phaseObsY === 'theta') out.yPeriod = 2 * Math.PI;
+      return out.xPeriod || out.yPeriod ? out : null;
+    }
+
+    if (this.mode === 'time') {
+      if (this.sourceKind === 'measurement') {
+        const m = this._selectedMeasurement();
+        if (m?.kind === 'angle' && m.signed !== false && m.continuous !== true) {
+          return { yPeriod: 360 };
+        }
+      } else if (this.observable === 'theta') {
+        return { yPeriod: 2 * Math.PI };
+      }
+    }
+    return null;
   }
 
   /**
@@ -3308,8 +3579,8 @@ class GraphWindow {
       'font-size': String(fs(forExport ? 12 : 10)),
       'font-family': FONT_DIAGRAM,
     });
-    const tickY = forExport ? H - pad.b + Math.round(14 * ink) : H - 8;
-    const yTickX = pad.l - Math.round(6 * ink);
+    const tickY = H - pad.b + Math.round((forExport ? 14 : 12) * (forExport ? ink : 1));
+    const yTickX = pad.l - Math.round((forExport ? 6 : 5) * (forExport ? ink : 1));
     for (const t of xTicks) {
       const tx = _svg('text', {
         x: xOf(t), y: tickY, 'text-anchor': 'middle',
@@ -3326,9 +3597,7 @@ class GraphWindow {
     }
     this._svg.appendChild(labels);
 
-    if (forExport) {
-      this._drawAxisTitles(obsMeta, { W, H, iw, ih, pad, isSweep, isPhase, ink });
-    }
+    this._drawAxisTitles(obsMeta, { W, H, iw, ih, pad, isSweep, isPhase, ink, forExport });
 
     const content = forExport
       ? _svg('g')
@@ -3343,8 +3612,11 @@ class GraphWindow {
         tMin, tMax, vMin, vMax, xOf, yOf, iw, ih, ink,
       });
     }
-    const d = plotSeries.map((p, i) => `${i ? 'L' : 'M'}${xOf(p.t).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
-    if (d) {
+    const wrapPeriods = (isPhase || this.mode === 'time') ? this._wrapPeriodsForPlot() : null;
+    const segments = splitSeriesAtPeriodicJumps(plotSeries, wrapPeriods);
+    for (const seg of segments) {
+      const d = seg.map((p, i) => `${i ? 'L' : 'M'}${xOf(p.t).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+      if (!d) continue;
       content.appendChild(_svg('path', {
         d, fill: 'none', stroke: COLORS.blue, 'stroke-width': sw(seriesStroke), 'stroke-linejoin': 'round',
       }));
@@ -3633,12 +3905,13 @@ class GraphWindow {
   }
 
   /**
-   * Axis titles for exported graph frames (live UI uses the window title instead).
+   * Axis titles beneath / beside tick labels (live UI and export).
    * @param {{ label: string, unit: string, xLabel?: string }} obsMeta
-   * @param {{ W: number, H: number, iw: number, ih: number, pad: { l:number,r:number,t:number,b:number }, isSweep: boolean, isPhase: boolean, ink?: number }} geom
+   * @param {{ W: number, H: number, iw: number, ih: number, pad: { l:number,r:number,t:number,b:number }, isSweep: boolean, isPhase: boolean, ink?: number, forExport?: boolean }} geom
    */
   _drawAxisTitles(obsMeta, geom) {
     const { H, iw, ih, pad, isSweep, isPhase } = geom;
+    const forExport = !!geom.forExport;
     const ink = geom.ink ?? 1;
     let xTitle;
     let yTitle;
@@ -3653,22 +3926,25 @@ class GraphWindow {
       yTitle = `${obsMeta.label} (${obsMeta.unit})`;
     }
 
+    const titleFs = forExport
+      ? Math.max(1, Math.round(16 * ink))
+      : 11;
     const titles = _svg('g', {
       class: 'graph-axis-titles',
       fill: COLORS.ink,
-      'font-size': String(Math.max(1, Math.round(16 * ink))),
+      'font-size': String(titleFs),
       'font-family': FONT_DIAGRAM,
     });
 
     const xEl = _svg('text', {
       x: pad.l + iw / 2,
-      y: H - Math.round(10 * ink),
+      y: forExport ? H - Math.round(10 * ink) : H - 5,
       'text-anchor': 'middle',
     });
     setSvgAxisTitle(xEl, xTitle);
     titles.appendChild(xEl);
 
-    const yCx = Math.round(16 * ink);
+    const yCx = forExport ? Math.round(16 * ink) : 14;
     const yCy = pad.t + ih / 2;
     const yEl = _svg('text', {
       x: yCx,

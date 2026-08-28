@@ -1,0 +1,120 @@
+{
+  "format": "newton-scene",
+  "version": 1,
+  "meta": {
+    "name": "Driven pendulum",
+    "source": "file"
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "bodies": [
+    {
+      "id": "anchor_1",
+      "type": "anchor",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "radius": 0.06
+      },
+      "driven": true,
+      "drivenTorque": "2*sin(2.86*t)"
+    },
+    {
+      "id": "bob",
+      "type": "ball",
+      "position": {
+        "x": 7.34788079488412e-17,
+        "y": 1.2
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "radius": 0.1
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "lockRotation": true
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "rod_1",
+      "type": "rod",
+      "bodyA": "anchor_1",
+      "bodyB": "bob",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 1.2,
+      "stiffness": 1,
+      "dampingMatter": 0
+    }
+  ],
+  "measurements": [
+    {
+      "id": "theta_arc",
+      "kind": "angle",
+      "vertex": {
+        "kind": "body",
+        "body": "anchor_1"
+      },
+      "a": {
+        "kind": "ray",
+        "body": "anchor_1",
+        "angleDeg": -90
+      },
+      "b": {
+        "kind": "body",
+        "body": "bob"
+      },
+      "label": "θ"
+    }
+  ],
+  "labels": [],
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "center": {
+      "x": -0.4342153957374718,
+      "y": 1.0956655022434918
+    },
+    "view": {
+      "width": 6.805649309448505,
+      "height": 3.7651922455550015
+    },
+    "followBody": null
+  }
+}

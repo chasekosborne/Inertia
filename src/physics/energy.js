@@ -17,8 +17,9 @@ import {
   constraintAnchorWorld,
   isSpringConstraint,
 } from './constraints.js';
-import { getAppliedForce } from './applied-force.js';
+import { getAppliedForce, hasDrivenAppliedForce } from './applied-force.js';
 import { getAppliedTorque } from './applied-torque.js';
+import { hasDrivenPivot } from './driven-pivot.js';
 
 const { Body } = Matter;
 
@@ -73,6 +74,8 @@ export function mechanicalEnergy(engine) {
  * @param {import('./engine.js').PhysicsEngine} engine
  */
 export function hasNonConservativeDrive(engine) {
+  if (hasDrivenPivot(engine)) return true;
+  if (hasDrivenAppliedForce(engine)) return true;
   for (const b of engine.bodies) {
     if (!isDynamic(b)) continue;
     if (getAppliedForce(b)) return true;

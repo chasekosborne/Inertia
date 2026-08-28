@@ -5,8 +5,14 @@ import {
 import { getOriginDisplayedM, worldPxToDisplayedM } from '../world-origin.js';
 import { SCENE_FORMAT, SCENE_VERSION } from './schema.js';
 import { wedgeAABBCenterWorld, bodyDisplayMass } from '../physics/bodies.js';
-import { getAppliedForce } from '../physics/applied-force.js';
+import {
+  getAppliedForce,
+  getAppliedForceDirection,
+  isDrivenAppliedForce,
+  getDrivenAppliedForceExpr,
+} from '../physics/applied-force.js';
 import { getAppliedTorque } from '../physics/applied-torque.js';
+import { isDrivenPivot, getDrivenTorqueExpr } from '../physics/driven-pivot.js';
 import { matterOmegaToDisplay } from '../physics/angular.js';
 
 /**
@@ -103,6 +109,14 @@ export function serializeScene(engine, opts = {}) {
       const af = getAppliedForce(b);
       if (af) {
         entry.appliedForce = { F: af.F, thetaDeg: af.thetaDeg };
+      } else if (isDrivenAppliedForce(b)) {
+        entry.appliedForce = { F: 0, thetaDeg: getAppliedForceDirection(b) };
+      }
+
+      if (isDrivenAppliedForce(b)) {
+        entry.drivenApplied = true;
+        const expr = getDrivenAppliedForceExpr(b);
+        if (expr) entry.drivenAppliedForce = expr;
       }
 
       const omega = matterOmegaToDisplay(b.angularVelocity || 0);
@@ -112,6 +126,12 @@ export function serializeScene(engine, opts = {}) {
       const tau = getAppliedTorque(b);
       if (tau != null) {
         entry.appliedTorque = tau;
+      }
+
+      if (b._newtonType === 'anchor' && isDrivenPivot(b)) {
+        entry.driven = true;
+        const expr = getDrivenTorqueExpr(b);
+        if (expr) entry.drivenTorque = expr;
       }
 
       return entry;

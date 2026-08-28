@@ -206,9 +206,18 @@ btnAddGraph?.addEventListener('click', () => {
   if (_currentSelection?.type === 'body') {
     seed.bodyId = _currentSelection.id;
     seed.trackId = graphHost._opts.getSelectedTrackId?.() ?? _currentSelection.id;
+    const body = engine.bodies.find(b => b.id === _currentSelection.id);
+    if (body?._newtonType === 'anchor' && body._driven === true) {
+      seed.observable = 'tau';
+    } else if (body?._drivenApplied === true && !body.isStatic) {
+      seed.observable = 'Fapp';
+    } else {
+      seed.observable = 'y';
+    }
+  } else {
+    // Prefer vertical position for textbook-style plots (e.g. rock air-drag).
+    seed.observable = 'y';
   }
-  // Prefer vertical position for textbook-style plots (e.g. rock air-drag).
-  seed.observable = 'y';
   graphHost.addGraph(seed);
   exportControls.syncButtons();
 });

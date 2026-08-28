@@ -17,6 +17,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "mathlive": "^0.110.0",
     "matter-js": "^0.20.0",
     "mp4-muxer": "^5.2.2"
   }

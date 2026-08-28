@@ -16,6 +16,8 @@ export function subHtml(base, sub) {
 /** Common property / settings label fragments (HTML). */
 export const MATH = {
   F:     mathHtml('F'),
+  Fapp:  mathHtml('F<sub>app</sub>'),
+  ptheta: mathHtml('p<sub>θ</sub>'),
   x:     mathHtml('x'),
   y:     mathHtml('y'),
   v0:    mathHtml('v<sub>0</sub>'),
@@ -27,6 +29,7 @@ export const MATH = {
   tau:   mathHtml('τ'),
   omega: mathHtml('ω'),
   theta: mathHtml('θ'),
+  t:     mathHtml('t'),
   mus:   mathHtml('μ<sub>s</sub>'),
   muk:   mathHtml('μ<sub>k</sub>'),
   xm:    mathHtml('x<sub>m</sub>'),
@@ -59,6 +62,9 @@ export const MATH_PLAIN = {
   Cd: 'Cd',
   Fsp: 'Fₛₚ',
   Fst: 'Fₛₜ',
+  Fapp: 'Fₐₚₚ',
+  ptheta: 'p_θ',
+  tau: 'τ',
   fk: 'fₖ',
   ell: 'ℓ',
   dx: 'Δx',

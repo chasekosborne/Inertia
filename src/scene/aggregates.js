@@ -160,13 +160,19 @@ export function constraintsWithin(engine, memberIds) {
  */
 export function bodyDisplayName(body) {
   if (!body) return 'Object';
-  if (typeof body.label === 'string' && body.label && !/^(circle|ball|box|wedge|ground|anchor|compound)_?\d*$/i.test(body.label)) {
+  if (typeof body.label === 'string' && body.label
+    && !/^(circle|ball|box|wedge|ground|anchor|pivot|compound)_?\d*$/i.test(body.label)) {
     return body.label;
   }
-  if (typeof body.label === 'string' && body.label) return body.label;
   const t = body._newtonType ?? 'body';
   if (t === 'compound') return 'Group';
   if (t === 'point-mass') return 'Point';
+  if (t === 'anchor') {
+    // Prefer pivot_N / anchor_N labels; otherwise "Pivot"
+    if (typeof body.label === 'string' && body.label) return body.label.replace(/^anchor_/i, 'pivot_');
+    return 'Pivot';
+  }
+  if (typeof body.label === 'string' && body.label) return body.label;
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -507,7 +513,7 @@ export function buildObjectBrowserTree(engine) {
       kind: 'body',
       id: b.id,
       name: bodyDisplayName(b),
-      type: b._newtonType ?? 'body',
+      type: (b._newtonType === 'anchor' ? 'pivot' : (b._newtonType ?? 'body')),
       icon: 'file',
       children: links,
     });

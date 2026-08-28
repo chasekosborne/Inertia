@@ -45,8 +45,12 @@ function applyEnvironment(engine, env, state) {
  * @param {object} doc
  * @param {string} bodyId
  * @param {number} indepHint
+ * @param {object} [metric]
  */
-function estimateTMax(doc, bodyId, indepHint) {
+function estimateTMax(doc, bodyId, indepHint, metric) {
+  if (typeof metric?.tMax === 'number' && metric.tMax > 0) return metric.tMax;
+  if (metric?.kind === 'resonance') return 25;
+
   const g = doc.environment?.gravity?.enabled === false
     ? 1
     : (doc.environment?.gravity?.g ?? 9.81);
@@ -113,7 +117,7 @@ export class ExperimentRunner {
       if (!findBody(this.engine, bodyId)) return null;
     }
 
-    const tMax = estimateTMax(working, bodyId, indepHint);
+    const tMax = estimateTMax(working, bodyId, indepHint, metric);
     const y = metric.compute({
       ...ctxBase,
       tMax,

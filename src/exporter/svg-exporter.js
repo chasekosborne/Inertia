@@ -22,6 +22,7 @@ import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, C
          ANCHOR_PIVOT_R, ANCHOR_STROKE_PX, anchorTriangleLocalVerts } from '../physics/bodies.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { springPathProps } from '../renderer/spring-path.js';
+import { appendDrivenPivotGlyph } from '../renderer/svg-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);
@@ -189,8 +190,12 @@ export function exportAnimatedSVG(frames, opts = {}) {
     _appendPresenceOpacity(g, bSnapshots, keyTimes, duration);
 
     if (bType === 'anchor') {
-      // Static anchor: draw once, no animation
-      _drawStaticAnchor(g, first.x, first.y);
+      const driven = first.driven === true;
+      if (driven) {
+        _drawDrivenAnchor(g, first.x, first.y, bId, bSnapshots, keyTimes, duration);
+      } else {
+        _drawStaticAnchor(g, first.x, first.y);
+      }
     } else if (bType === 'ground') {
       _drawStaticGround(g, first.x, first.y, first.bWidth ?? 400, first.bHeight ?? 20);
     } else if (bType === 'point-mass') {
@@ -198,10 +203,10 @@ export function exportAnimatedSVG(frames, opts = {}) {
       const s  = circleRingStrokePx(r);
       const hollow = first.hollow === true;
       const cx = el('circle', {
-        cx: 0, cy: 0, r: hollow ? Math.max(0.5, r - s / 2) : r,
-        fill: hollow ? 'none' : INK,
-        stroke: hollow ? INK : 'none',
-        'stroke-width': hollow ? s : 0,
+        cx: 0, cy: 0, r: Math.max(0.5, r - s / 2),
+        fill: hollow ? 'none' : BOX_FILL_HEX,
+        stroke: hollow ? INK : BOX_STROKE_HEX,
+        'stroke-width': s,
       });
 
       const txAnim = el('animateTransform', {
@@ -312,11 +317,14 @@ export function exportAnimatedSVG(frames, opts = {}) {
         const ly = p.ly ?? 0;
         const deg = ((p.la ?? 0) * 180) / Math.PI;
         if ((p.type === 'point-mass' || p.type === 'ball') && p.radius) {
+          const s = circleRingStrokePx(p.radius);
+          const greyFill = p.type === 'point-mass' && !p.hollow;
           wrapper.appendChild(el('circle', {
-            cx: lx, cy: ly, r: p.radius,
-            fill: INK,
-            stroke: 'none',
-            'stroke-width': 0,
+            cx: lx, cy: ly,
+            r: greyFill || p.hollow ? Math.max(0.5, p.radius - s / 2) : p.radius,
+            fill: p.hollow ? 'none' : (greyFill ? BOX_FILL_HEX : INK),
+            stroke: p.hollow ? INK : (greyFill ? BOX_STROKE_HEX : 'none'),
+            'stroke-width': greyFill || p.hollow ? s : 0,
           }));
         } else {
           const w = p.width ?? 40;
@@ -499,6 +507,30 @@ function _drawStaticAnchor(g, x, y) {
     cx: x, cy: y, r: ANCHOR_PIVOT_R,
     fill: '#fff', stroke: INK, 'stroke-width': 2,
   }));
+}
+
+function _drawDrivenAnchor(g, x, y, bId, snapshots, keyTimes, duration) {
+  const { apex, left, right } = anchorTriangleLocalVerts();
+  g.appendChild(el('polygon', {
+    points: `${x + apex.x},${y + apex.y} ${x + left.x},${y + left.y} ${x + right.x},${y + right.y}`,
+    fill: 'none', stroke: INK, 'stroke-width': ANCHOR_STROKE_PX,
+  }));
+  const hinge = el('g', { transform: `translate(${x},${y})` });
+  appendDrivenPivotGlyph(hinge, `export-${bId}`, 0);
+  const disk = hinge.querySelector('.driven-pivot-disk');
+  if (disk) {
+    const angles = snapshots.map(s => {
+      const a = (s?.drivenVisualAngle ?? 0) * 180 / Math.PI;
+      return a.toFixed(2);
+    });
+    disk.appendChild(el('animateTransform', {
+      attributeName: 'transform',
+      type: 'rotate',
+      ...smilValues(angles.map(a => `${a} 0 0`), keyTimes, duration),
+      additive: 'sum',
+    }));
+  }
+  g.appendChild(hinge);
 }
 
 function _drawStaticGround(g, x, y, w, h) {

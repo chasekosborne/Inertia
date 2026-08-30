@@ -41,7 +41,7 @@ import {
   captureHangingChain,
   applyHangingChainTranslation,
 } from '../physics/layout-anchors.js';
-import { springPathProps } from '../renderer/spring-path.js';
+import { springPathProps } from '../editor/view/spring-path.js';
 import { snapWorldCoord, snapSegmentFromStart, snapAngleRad, SNAP_ANGLE_STEP_5_DEG } from '../grid.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
 import { pxToM } from '../units.js';

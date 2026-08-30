@@ -1,6 +1,6 @@
 import './units.js'; // patch Matter _baseDelta / Engine._deltaMax before other imports use the engine
 import { PhysicsEngine }    from './physics/engine.js';
-import { SvgRenderer }      from './renderer/svg-renderer.js';
+import { SvgRenderer }      from './editor/view/svg-renderer.js';
 import { Recorder }         from './recorder/recorder.js';
 import { Playback }         from './recorder/playback.js';
 import { ExportControls }   from './exporter/export-controls.js';

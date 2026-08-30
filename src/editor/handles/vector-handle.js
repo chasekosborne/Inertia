@@ -30,7 +30,7 @@ import {
   snapWorldCoord, snapVelocityToAngle, VELOCITY_SNAP_MS, SNAP_ANGLE_STEP_5_DEG,
 } from '../../grid.js';
 import { getAppliedForce } from '../../physics/applied-force.js';
-import { VECTOR_MIN_LEN } from '../../renderer/svg-renderer.js';
+import { VECTOR_MIN_LEN } from '../../editor/view/svg-renderer.js';
 import { FONT_DIAGRAM } from '../../theme.js';
 import { svgEl, HANDLE_BLUE, HANDLE_RED, VECTOR_HANDLE_ID } from './chrome.js';
 

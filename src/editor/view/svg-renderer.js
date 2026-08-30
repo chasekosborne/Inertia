@@ -6,30 +6,30 @@
  */
 
 import Matter from 'matter-js';
-import { getMetricOriginWorldPx } from '../world-origin.js';
+import { getMetricOriginWorldPx } from '../../world-origin.js';
 import {
   mToPx, DEFAULT_CIRCLE_RADIUS_M, DEFAULT_BALL_RADIUS_M, matterVelToDisplayMS, PX_PER_M,
   getForcePxPerN, getVelocityPxPerMs, getWeightPxPerKg,
-} from '../units.js';
+} from '../../units.js';
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
          wedgeVertsCentred, wedgeOutlineStrokePx, ANCHOR_PIVOT_R, ANCHOR_STROKE_PX,
-         anchorTriangleLocalVerts } from '../physics/bodies.js';
+         anchorTriangleLocalVerts } from '../../physics/bodies.js';
 import {
   getAppliedForce,
   isDrivenAppliedForce,
   collectDrivenAppliedAppForces,
-} from '../physics/applied-force.js';
-import { getAppliedTorque } from '../physics/applied-torque.js';
-import { isDrivenPivot, collectDrivenAppForces } from '../physics/driven-pivot.js';
+} from '../../physics/applied-force.js';
+import { getAppliedTorque } from '../../physics/applied-torque.js';
+import { isDrivenPivot, collectDrivenAppForces } from '../../physics/driven-pivot.js';
 import {
   matterOmegaToDisplay,
   outOfPlaneGlyphRadius,
   outOfPlaneOmegaGlyphRadius,
-} from '../physics/angular.js';
-import { FONT_DIAGRAM, COLORS } from '../theme.js';
+} from '../../physics/angular.js';
+import { FONT_DIAGRAM, COLORS } from '../../theme.js';
 import { springPathProps } from './spring-path.js';
-import { setSvgMathLabel } from '../math-text.js';
-import { ropeSelection, ropeStrokeWidthPx } from '../physics/rope.js';
+import { setSvgMathLabel } from '../../math-text.js';
+import { ropeSelection, ropeStrokeWidthPx } from '../../physics/rope.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);

@@ -21,8 +21,8 @@ import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, C
          wedgeVertsCentred, insetPolygonVerts, wedgeOutlineStrokePx,
          ANCHOR_PIVOT_R, ANCHOR_STROKE_PX, anchorTriangleLocalVerts } from '../physics/bodies.js';
 import { FONT_DIAGRAM, COLORS } from '../theme.js';
-import { springPathProps } from '../renderer/spring-path.js';
-import { appendDrivenPivotGlyph } from '../renderer/svg-renderer.js';
+import { springPathProps } from '../editor/view/spring-path.js';
+import { appendDrivenPivotGlyph } from '../editor/view/svg-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);

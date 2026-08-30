@@ -16,7 +16,7 @@
 import { serializeScene, cloneSceneDocument } from './serialize.js';
 import { validateSceneDocument } from './validate.js';
 import { downloadSceneJSON, pickAndLoadSceneFile } from './io.js';
-import { showToolbarToast } from '../ui/toast.js';
+import { showToolbarToast } from '../editor/toast.js';
 
 /** Smallest viewport we trust for capturing the camera framing (px). */
 const MIN_VIEW_PX = 2;

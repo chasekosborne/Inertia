@@ -13,7 +13,7 @@ import {
   measurementDisplayLabel,
   measurementRefsBody,
   unwrapAngleStep,
-} from '../ui/measure-eval.js';
+} from '../editor/measure-eval.js';
 
 const { Body } = Matter;
 

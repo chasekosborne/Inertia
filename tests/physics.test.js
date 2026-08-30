@@ -10,7 +10,7 @@ import {
   sampleWhileRunning,
   estimateHalfPeriodFromPeaks,
 } from './helpers/sim.js';
-import { evaluateMeasurementOnEngine } from '../src/ui/measure-eval.js';
+import { evaluateMeasurementOnEngine } from '../src/editor/measure-eval.js';
 
 const demoScenes = import.meta.glob('../demo/**/*.json', { eager: true, import: 'default' });
 

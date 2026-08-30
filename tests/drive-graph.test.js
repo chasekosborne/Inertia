@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Recorder } from '../src/recorder/recorder.js';
 import { isDrivenAppliedForce } from '../src/physics/applied-force.js';
 import { isDrivenPivot } from '../src/physics/driven-pivot.js';
-import { sampleObservable, buildSeries, graphObservablesForTrack } from '../src/ui/graph-panel.js';
+import { sampleObservable, buildSeries, graphObservablesForTrack } from '../src/editor/graph-panel.js';
 import { cloneSceneDocument } from '../src/scene/serialize.js';
 import { loadScene, runForSeconds, findBody } from './helpers/sim.js';
 

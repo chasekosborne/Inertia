@@ -4,15 +4,15 @@ import { SvgRenderer }      from './renderer/svg-renderer.js';
 import { Recorder }         from './recorder/recorder.js';
 import { Playback }         from './recorder/playback.js';
 import { ExportControls }   from './exporter/export-controls.js';
-import { EnvironmentPanel } from './ui/environment-panel.js';
+import { EnvironmentPanel } from './editor/environment-panel.js';
 import { SceneSession }     from './scene/scene-session.js';
-import { showToolbarToast } from './ui/toast.js';
-import { PropertiesPanel }  from './ui/properties.js';
-import { ObjectBrowser }    from './ui/object-browser.js';
-import { GraphHost }        from './ui/graph-panel.js';
-import { InteractionHandler } from './ui/interaction.js';
-import { MeasurementManager } from './ui/measurements.js';
-import { LabelManager } from './ui/labels.js';
+import { showToolbarToast } from './editor/toast.js';
+import { PropertiesPanel }  from './editor/properties.js';
+import { ObjectBrowser }    from './editor/object-browser.js';
+import { GraphHost }        from './editor/graph-panel.js';
+import { InteractionHandler } from './editor/interaction.js';
+import { MeasurementManager } from './editor/measurements.js';
+import { LabelManager } from './editor/labels.js';
 import {
   buildBlankScene,
   deserializeScene,
@@ -22,18 +22,18 @@ import {
 import { removeRope, ropeSelection } from './physics/rope.js';
 import { Camera, DEFAULT_CAMERA_SCALE } from './camera/camera.js';
 import { CameraRig }        from './camera/camera-rig.js';
-import { CameraOverlay }    from './ui/camera-overlay.js';
+import { CameraOverlay }    from './editor/camera-overlay.js';
 import { HistoryManager, captureSnapshot, applySnapshot } from './history.js';
 import { setMetricOriginEngine, getMetricOriginWorldPx } from './world-origin.js';
 import { paramsForScene } from './experiment/params.js';
-import { createEditorContext } from './ui/handles/editor-context.js';
-import { ScaleHandles } from './ui/handles/scale-handles.js';
-import { VectorHandle } from './ui/handles/vector-handle.js';
-import { EditHandles } from './ui/handles/edit-handles.js';
-import { ObjectClipboard } from './ui/object-clipboard.js';
-import { TimelineBar } from './ui/timeline-bar.js';
-import { PalettePlacement } from './ui/palette-placement.js';
-import { bindShortcuts } from './ui/shortcuts.js';
+import { createEditorContext } from './editor/handles/editor-context.js';
+import { ScaleHandles } from './editor/handles/scale-handles.js';
+import { VectorHandle } from './editor/handles/vector-handle.js';
+import { EditHandles } from './editor/handles/edit-handles.js';
+import { ObjectClipboard } from './editor/object-clipboard.js';
+import { TimelineBar } from './editor/timeline-bar.js';
+import { PalettePlacement } from './editor/palette-placement.js';
+import { bindShortcuts } from './editor/shortcuts.js';
 
 
 // ── DOM refs ──────────────────────────────────────────────────────

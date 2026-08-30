@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { splitSeriesAtPeriodicJumps, sampleObservable, buildSeries, graphObservablesForTrack } from '../src/ui/graph-panel.js';
+import { splitSeriesAtPeriodicJumps, sampleObservable, buildSeries, graphObservablesForTrack } from '../src/editor/graph-panel.js';
 
 describe('splitSeriesAtPeriodicJumps', () => {
   it('splits at wrapped θ jumps on the y axis', () => {

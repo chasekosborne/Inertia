@@ -539,7 +539,7 @@ export class PropertiesPanel {
 
   /**
    * Camera rig: framing for viewport + video export.
-   * @param {import('../camera/camera-rig.js').CameraRig} rig
+   * @param {import('../editor/camera/camera-rig.js').CameraRig} rig
    * @param {() => void} onApply
    */
   showCamera(rig, onApply) {

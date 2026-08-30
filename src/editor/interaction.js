@@ -73,7 +73,7 @@ export class InteractionHandler {
    * @param {SVGSVGElement} svg
    * @param {PhysicsEngine} physicsEngine
    * @param {(sel: object|null) => void} onSelect
-   * @param {import('../camera/camera.js').Camera|null} [camera]
+   * @param {import('../editor/camera/camera.js').Camera|null} [camera]
    * @param {SVGElement|null} [ghostParent]: `<g>` for placement previews (use renderer `interactionGhostLayer`, sits under `uiTopLayer`).
    */
   constructor(svg, physicsEngine, onSelect, camera = null, ghostParent = null) {

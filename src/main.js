@@ -20,8 +20,8 @@ import {
   validateSceneDocument,
 } from './scene/index.js';
 import { removeRope, ropeSelection } from './physics/rope.js';
-import { Camera, DEFAULT_CAMERA_SCALE } from './camera/camera.js';
-import { CameraRig }        from './camera/camera-rig.js';
+import { Camera, DEFAULT_CAMERA_SCALE } from './editor/camera/camera.js';
+import { CameraRig }        from './editor/camera/camera-rig.js';
 import { CameraOverlay }    from './editor/camera-overlay.js';
 import { HistoryManager, captureSnapshot, applySnapshot } from './history.js';
 import { setMetricOriginEngine, getMetricOriginWorldPx } from './world-origin.js';

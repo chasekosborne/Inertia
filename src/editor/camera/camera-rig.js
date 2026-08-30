@@ -3,8 +3,8 @@
  * Drives the live {@link Camera} transform and video export framing.
  */
 
-import { PX_PER_M, mToPx } from '../units.js';
-import { displayedMToWorldPx, worldPxToDisplayedM } from '../world-origin.js';
+import { PX_PER_M, mToPx } from '../../units.js';
+import { displayedMToWorldPx, worldPxToDisplayedM } from '../../world-origin.js';
 
 const MIN_VIEW_PX = 40;
 

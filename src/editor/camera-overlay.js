@@ -27,8 +27,8 @@ function el(tag, attrs = {}) {
 export class CameraOverlay {
   /**
    * @param {SVGSVGElement} overlaySvg screen-space overlay (matches canvas size)
-   * @param {import('../camera/camera.js').Camera} camera
-   * @param {import('../camera/camera-rig.js').CameraRig} rig
+   * @param {import('../editor/camera/camera.js').Camera} camera
+   * @param {import('../editor/camera/camera-rig.js').CameraRig} rig
    * @param {object} [deps]
    * @param {() => string} [deps.getToolMode]  Input is inert unless this is 'camera'.
    * @param {() => { width: number, height: number }} [deps.getViewSize]

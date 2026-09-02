@@ -14,11 +14,12 @@ import { serializeScene } from '../src/scene/serialize.js';
 import { cloneSceneDocument } from '../src/scene/serialize.js';
 import { loadScene, runForSeconds, findBody } from './helpers/sim.js';
 
+const PULL_AT_ANGLE = '../demo/Physics_Problems/pull-at-angle.json';
 const demoScenes = import.meta.glob('../demo/**/*.json', { eager: true, import: 'default' });
 
 describe('driven applied force', () => {
   it('applies constant F(t) and accelerates a box', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     // Drop gravity / constant F so only our drive moves the body.
     if (doc.environment?.gravity) doc.environment.gravity.enabled = false;
     for (const b of doc.bodies ?? []) {
@@ -44,7 +45,7 @@ describe('driven applied force', () => {
   });
 
   it('exposes F_app for the free-body diagram', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     if (doc.environment?.gravity) doc.environment.gravity.enabled = false;
     for (const b of doc.bodies ?? []) delete b.appliedForce;
 
@@ -62,7 +63,7 @@ describe('driven applied force', () => {
   });
 
   it('flips F_app 180° when F(t) is negative', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     const engine = loadScene(doc);
     const body = engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     setDrivenAppliedForce(body, true);
@@ -75,7 +76,7 @@ describe('driven applied force', () => {
   });
 
   it('serializes and reloads driven applied force', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     const engine = loadScene(doc);
     const body = engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     const id = body.label;

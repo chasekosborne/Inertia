@@ -1,7 +1,26 @@
-import { SCENE_FORMAT, SCENE_VERSION } from './schema.js';
+import { SCENE_FORMAT, SCENE_VERSION, normalizeBodyType, migrateLegacySceneBodyType } from './schema.js';
 
-const BODY_TYPES = new Set(['point-mass', 'ball', 'box', 'wedge', 'ground', 'anchor', 'metric-basis']);
+const BODY_TYPES = new Set(['ball', 'point', 'box', 'wedge', 'ground', 'anchor', 'metric-basis']);
+const LEGACY_BODY_TYPES = new Set(['point-mass']);
 const CONSTRAINT_TYPES = new Set(['spring', 'rod', 'string']);
+
+function parameterValidationError(parameters, scope) {
+  if (parameters == null) return null;
+  if (typeof parameters !== 'object' || Array.isArray(parameters)) {
+    return `${scope} "parameters" must be an object.`;
+  }
+  for (const [name, value] of Object.entries(parameters)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) {
+      return `Invalid parameter name "${name}".`;
+    }
+    const definition = typeof value === 'string' ? { expression: value } : value;
+    if (!definition || typeof definition !== 'object'
+      || typeof definition.expression !== 'string' || !definition.expression.trim()) {
+      return `Parameter "${name}" needs a non-empty "expression".`;
+    }
+  }
+  return null;
+}
 
 /**
  * @param {unknown} doc
@@ -31,6 +50,11 @@ export function validateSceneDocument(doc) {
     return { ok: false, error: 'Scene is missing a "constraints" array.' };
   }
 
+  const globalParameterError = parameterValidationError(d.parameters, 'Scene');
+  if (globalParameterError) {
+    return { ok: false, error: globalParameterError };
+  }
+
   const ids = new Set();
   for (const b of d.bodies) {
     if (!b || typeof b !== 'object') {
@@ -44,11 +68,21 @@ export function validateSceneDocument(doc) {
       return { ok: false, error: `Duplicate body id "${body.id}".` };
     }
     ids.add(body.id);
-    if (!BODY_TYPES.has(/** @type {string} */ (body.type))) {
+    if (!BODY_TYPES.has(/** @type {string} */ (body.type))
+      && !LEGACY_BODY_TYPES.has(/** @type {string} */ (body.type))
+      && !((d.version ?? 1) < 2 && body.type === 'ball')) {
       return { ok: false, error: `Unknown body type "${body.type}" on "${body.id}".` };
     }
+    const sceneVersion = /** @type {number} */ (d.version ?? 1);
+    body.type = sceneVersion < 2
+      ? migrateLegacySceneBodyType(/** @type {string} */ (body.type))
+      : normalizeBodyType(/** @type {string} */ (body.type));
     if (!body.position || typeof body.position !== 'object') {
       return { ok: false, error: `Body "${body.id}" is missing "position".` };
+    }
+    const bodyParameterError = parameterValidationError(body.parameters, `Body "${body.id}"`);
+    if (bodyParameterError) {
+      return { ok: false, error: bodyParameterError };
     }
   }
 

@@ -11,8 +11,8 @@
 
 import {
   mToPx,
-  DEFAULT_CIRCLE_RADIUS_M,
   DEFAULT_BALL_RADIUS_M,
+  DEFAULT_POINT_RADIUS_M,
   matterVelToDisplayMS,
   getVelocityPxPerMs,
   getWeightPxPerKg,
@@ -25,8 +25,8 @@ import { springPathProps } from '../editor/view/spring-path.js';
 import { appendDrivenPivotGlyph } from '../editor/view/svg-renderer.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);
 const DEFAULT_BALL_R = mToPx(DEFAULT_BALL_RADIUS_M);
+const DEFAULT_POINT_R = mToPx(DEFAULT_POINT_RADIUS_M);
 
 const INK  = COLORS.ink;
 const AMPL  = 7.5;
@@ -198,8 +198,8 @@ export function exportAnimatedSVG(frames, opts = {}) {
       }
     } else if (bType === 'ground') {
       _drawStaticGround(g, first.x, first.y, first.bWidth ?? 400, first.bHeight ?? 20);
-    } else if (bType === 'point-mass') {
-      const r  = first.radius ?? DEFAULT_CIRCLE_R;
+    } else if (bType === 'ball' || bType === 'point-mass') {
+      const r  = first.radius ?? DEFAULT_BALL_R;
       const s  = circleRingStrokePx(r);
       const hollow = first.hollow === true;
       const cx = el('circle', {
@@ -229,8 +229,8 @@ export function exportAnimatedSVG(frames, opts = {}) {
       wrapper.appendChild(raAnim);
       g.appendChild(wrapper);
 
-    } else if (bType === 'ball') {
-      const r  = first.radius ?? DEFAULT_BALL_R;
+    } else if (bType === 'point') {
+      const r  = first.radius ?? DEFAULT_POINT_R;
       const cx = el('circle', { cx: 0, cy: 0, r, fill: INK });
 
       const txAnim = el('animateTransform', {
@@ -316,9 +316,10 @@ export function exportAnimatedSVG(frames, opts = {}) {
         const lx = p.lx ?? 0;
         const ly = p.ly ?? 0;
         const deg = ((p.la ?? 0) * 180) / Math.PI;
-        if ((p.type === 'point-mass' || p.type === 'ball') && p.radius) {
+        let pType = p.type === 'point-mass' ? 'ball' : p.type;
+        if ((pType === 'ball' || pType === 'point') && p.radius) {
           const s = circleRingStrokePx(p.radius);
-          const greyFill = p.type === 'point-mass' && !p.hollow;
+          const greyFill = pType === 'ball' && !p.hollow;
           wrapper.appendChild(el('circle', {
             cx: lx, cy: ly,
             r: greyFill || p.hollow ? Math.max(0.5, p.radius - s / 2) : p.radius,
@@ -534,13 +535,13 @@ function _drawDrivenAnchor(g, x, y, bId, snapshots, keyTimes, duration) {
 }
 
 function _drawStaticGround(g, x, y, w, h) {
-  g.appendChild(el('line', {
-    x1: x - w/2, y1: y - h/2, x2: x + w/2, y2: y - h/2,
-    stroke: INK, 'stroke-width': 2,
-  }));
   g.appendChild(el('rect', {
     x: x - w/2, y: y - h/2, width: w, height: h,
     fill: 'url(#hatch)',
+  }));
+  g.appendChild(el('line', {
+    x1: x - w/2, y1: y - h/2, x2: x + w/2, y2: y - h/2,
+    stroke: INK, 'stroke-width': 2,
   }));
 }
 

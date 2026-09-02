@@ -14,6 +14,14 @@ import { evaluateMeasurementOnEngine } from '../src/editor/measure-eval.js';
 
 const demoScenes = import.meta.glob('../demo/**/*.json', { eager: true, import: 'default' });
 
+/** Shorter sim for rope-heavy demos: NaN smoke only, avoids CI timeouts on 100-segment ropes. */
+function smokeTestSeconds(doc) {
+  const ropeSegs = (doc.bodies ?? []).filter(b => b.material?.ropeSegment === true).length;
+  if (ropeSegs >= 40) return 0.15;
+  if (ropeSegs >= 10) return 0.3;
+  return 1;
+}
+
 function conservativeDoc(path) {
   const doc = cloneSceneDocument(demoScenes[path]);
   if (doc.environment?.air) doc.environment.air.enabled = false;
@@ -134,6 +142,36 @@ describe('simple harmonic oscillator', () => {
   });
 });
 
+describe('ground collision', () => {
+  it('uses a thin collider along the top edge only', async () => {
+    const { createGround, createBall, GROUND_COLLISION_THICKNESS } = await import('../src/physics/bodies.js');
+    const { groundTopEdgeWorld } = await import('../src/physics/layout-anchors.js');
+    const { PhysicsEngine } = await import('../src/physics/engine.js');
+
+    const ground = createGround(400, 300, 400, 20, { muK: 0, muS: 0, restitution: 0 });
+    expect(ground.bounds.max.y - ground.bounds.min.y).toBeCloseTo(GROUND_COLLISION_THICKNESS, 1);
+
+    const { L, R } = groundTopEdgeWorld(ground);
+    const midX = (L.x + R.x) / 2;
+    const midY = (L.y + R.y) / 2;
+    const cos = Math.cos(ground.angle);
+    const sin = Math.sin(ground.angle);
+    // Inside the hatched slab but off the walking surface (beside the line).
+    const sideX = midX + cos * 80;
+    const sideY = midY + sin * 80 + 10;
+
+    const engine = new PhysicsEngine();
+    engine.addBody(ground);
+    const ball = createBall(sideX, sideY, { radius: 12, mass: 1, muK: 0, muS: 0, restitution: 0 });
+    engine.addBody(ball);
+
+    for (let i = 0; i < 30; i++) engine.step();
+
+    // Should fall through the visual slab (no side collision).
+    expect(ball.position.y).toBeGreaterThan(sideY + 5);
+  });
+});
+
 describe('rod to angled ground', () => {
   it('pivots about the top-edge attach point (Matter static offset)', async () => {
     const { PhysicsEngine } = await import('../src/physics/engine.js');
@@ -193,8 +231,9 @@ describe('rod to angled ground', () => {
 describe('demo scenes load and step', () => {
   for (const [path, doc] of Object.entries(demoScenes)) {
     it(`steps without NaN state: ${path.replace('../demo/', '')}`, () => {
-      const engine = loadScene(cloneSceneDocument(doc));
-      runForSeconds(engine, 1);
+      const scene = cloneSceneDocument(doc);
+      const engine = loadScene(scene);
+      runForSeconds(engine, smokeTestSeconds(scene));
       for (const b of engine.bodies) {
         expect(Number.isFinite(b.position.x)).toBe(true);
         expect(Number.isFinite(b.position.y)).toBe(true);

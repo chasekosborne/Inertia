@@ -1,46 +1,80 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Driven harmonic oscillator",
     "source": "demo",
     "demoId": "driven-harmonic-oscillator",
-    "description": "Horizontal spring–mass with a sinusoidal drive F(t) = 2 sin(2π f t) along +x. m = 1 kg, k = 40 N/m ⇒ f₀ = √(k/m)/(2π) ≈ 1.01 Hz. Light linear damping (frictionAir) so a steady amplitude develops. Equilibrium at x = 0 m. To plot a resonance curve: open Graph → Advanced — parameter sweep → Independent = f (drive), Dependent = Aₓ (steady), From ≈ 0.4 Hz, To ≈ 1.6 Hz, Runs ≈ 21."
+    "description": "Horizontal spring–mass with a chirped drive F(t) = 2 sin(ω(t) t) along +x, where ω(t) = 2π(0.4 + 0.01t) rad/s. m = 1 kg, k = 40 N/m ⇒ f₀ = √(k/m)/(2π) ≈ 1.01 Hz. Light linear damping (frictionAir) so a steady amplitude develops. Equilibrium at x = 0 m. To plot a resonance curve: open Graph → Advanced — parameter sweep → Independent = f (drive), Dependent = Aₓ (steady), From ≈ 0.4 Hz, To ≈ 1.6 Hz, Runs ≈ 21."
   },
-  "metricOrigin": { "x": 0, "y": 0 },
-  "environment": {
-    "gravity": { "enabled": false, "g": 9.81 },
-    "air": { "enabled": false, "cd": 0.47, "area": 0.045, "rho": 1.225 }
-  },
-  "camera": {
-    "center": { "x": 0.3, "y": -0.375 },
-    "view": { "width": 3.4, "height": 1.85 }
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
   },
   "bodies": [
     {
       "id": "ground_floor",
       "type": "ground",
-      "position": { "x": 0.4, "y": 0.1 },
+      "position": {
+        "x": 0.4,
+        "y": 0.1
+      },
       "angle": 0,
-      "geometry": { "width": 3.2, "height": 0.2 },
-      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "width": 3.2,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0.01
+      }
     },
     {
       "id": "ground_wall",
       "type": "ground",
-      "position": { "x": -1.3, "y": -0.6 },
+      "position": {
+        "x": -1.3,
+        "y": -0.6
+      },
       "angle": 1.5707963267948966,
-      "geometry": { "width": 1.2, "height": 0.2 },
-      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "width": 1.2,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0.01
+      }
     },
     {
       "id": "mass",
       "type": "box",
-      "position": { "x": 0, "y": -0.1 },
+      "position": {
+        "x": 0,
+        "y": -0.1
+      },
       "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
       "mass": 1,
-      "velocity": { "vx": 0, "vy": 0 },
-      "geometry": { "width": 0.2, "height": 0.2 },
+      "geometry": {
+        "width": 0.2,
+        "height": 0.2
+      },
       "material": {
         "restitution": 0,
         "muK": 0,
@@ -48,9 +82,20 @@
         "frictionAir": 0.0015,
         "lockRotation": true
       },
-      "appliedForce": { "F": 0, "thetaDeg": 0 },
+      "appliedForce": {
+        "F": 0,
+        "thetaDeg": 0
+      },
       "drivenApplied": true,
-      "drivenAppliedForce": "2*sin(2*pi*0.7*t)"
+      "drivenAppliedForce": "2sin(omega t)",
+      "drivenAppliedPhaseParameter": "omega",
+      "parameters": {
+        "omega": {
+          "expression": "2pi(0.4 + 0.01t)",
+          "label": "ω(t)",
+          "unit": "rad/s"
+        }
+      }
     }
   ],
   "constraints": [
@@ -59,36 +104,108 @@
       "type": "spring",
       "bodyA": "ground_wall",
       "bodyB": "mass",
-      "anchorA": { "x": 0.5, "y": -0.1 },
-      "anchorB": { "x": 0, "y": 0 },
+      "anchorA": {
+        "x": 0.5,
+        "y": -0.1
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
       "restLength": 1.2,
-      "k": 40
-    }
-  ],
-  "labels": [
-    {
-      "id": "m_label",
-      "text": "m",
-      "body": "mass",
-      "italic": true
-    },
-    {
-      "id": "x0",
-      "text": "x_0",
-      "point": { "x": 0, "y": -0.1 },
-      "offset": { "x": 0, "y": -0.5 }
+      "k": 40,
+      "limits": {
+        "maxExtension": null,
+        "maxCompression": null
+      }
     }
   ],
   "measurements": [
     {
       "id": "x_disp",
       "kind": "length",
+      "a": {
+        "kind": "label",
+        "label": "x0"
+      },
+      "b": {
+        "kind": "body",
+        "body": "mass"
+      },
       "label": "x",
-      "dynamic": true,
       "component": "dx",
-      "signed": true,
-      "a": { "kind": "label", "label": "x0" },
-      "b": { "kind": "body", "body": "mass" }
+      "signed": true
     }
-  ]
+  ],
+  "labels": [
+    {
+      "id": "m_label",
+      "text": "m",
+      "italic": true,
+      "body": "mass"
+    },
+    {
+      "id": "x0",
+      "text": "x_0",
+      "point": {
+        "x": 0,
+        "y": -0.1
+      },
+      "dynamic": false,
+      "offset": {
+        "x": 0,
+        "y": -0.5
+      }
+    },
+    {
+      "id": "drive_formula",
+      "text": "F(t) = {{value}}",
+      "fontSize": 15,
+      "valueBinding": {
+        "body": "mass",
+        "property": "drivenAppliedForce",
+        "format": "latex"
+      },
+      "position": {
+        "x": 0.2,
+        "y": 0.58
+      }
+    },
+    {
+      "id": "drive_omega",
+      "text": "ω(t) = {{value}} rad/s",
+      "fontSize": 15,
+      "valueBinding": {
+        "body": "mass",
+        "property": "drivenAppliedOmega"
+      },
+      "position": {
+        "x": 0.2,
+        "y": 0.82
+      }
+    }
+  ],
+  "environment": {
+    "gravity": {
+      "enabled": false,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "center": {
+      "x": -0.11609139091103372,
+      "y": -0.6035071198674812
+    },
+    "view": {
+      "width": 5.607276253125348,
+      "height": 3.6911360842465104
+    },
+    "followBody": null
+  }
 }

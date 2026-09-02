@@ -120,7 +120,7 @@ function buildBallOnWedgeScene(opts) {
       },
       {
         id: 'ball_1',
-        type: 'ball',
+        type: 'point',
         position: { x: ballX, y: ballY },
         angle: 0,
         mass: m,

@@ -1,6 +1,6 @@
 import Matter from 'matter-js';
 import {
-  createPointMass, createBall, createBox, createWedge, createAnchor, createGround,
+  createBall, createPoint, createBox, createWedge, createAnchor, createGround,
   createMetricBasis, createString, setMaterialFriction, setWedgeAABBCenter,
 } from '../physics/bodies.js';
 import { createRod, createSpring } from '../physics/constraints.js';
@@ -9,6 +9,9 @@ import {
   setAppliedForce,
   setDrivenAppliedForce,
   setDrivenAppliedForceExpr,
+  setDrivenAppliedFrequencyExpr,
+  setDrivenAppliedParameters,
+  setDrivenAppliedPhaseParameter,
   supportsAppliedForce,
 } from '../physics/applied-force.js';
 import { setAppliedTorque } from '../physics/applied-torque.js';
@@ -16,9 +19,14 @@ import { setDriven, setDrivenTorqueExpr } from '../physics/driven-pivot.js';
 import { displayOmegaToMatter } from '../physics/angular.js';
 import {
   PX_PER_M, mToPx, displayMSToMatterVel,
-  DEFAULT_CIRCLE_RADIUS_M, DEFAULT_BALL_RADIUS_M,
+  DEFAULT_BALL_RADIUS_M, DEFAULT_POINT_RADIUS_M,
+  /** @deprecated */ DEFAULT_CIRCLE_RADIUS_M,
 } from '../units.js';
+import { normalizeBodyType } from './schema.js';
 import { getOriginDisplayedM } from '../world-origin.js';
+import { migrateBodyV1ToComponents } from './migrate-v1-to-v2.js';
+import { attachFromMigration } from '../components/entity.js';
+import { attachOptionalFromMigration } from '../components/optional-properties.js';
 
 const { Body, World, Engine } = Matter;
 
@@ -30,30 +38,33 @@ const { Body, World, Engine } = Matter;
 function createBodyFromScene(bd, wx, wy) {
   const mat = bd.material ?? {};
   const geo = bd.geometry ?? {};
+  const type = normalizeBodyType(bd.type);
 
-  switch (bd.type) {
-    case 'point-mass':
-      return createPointMass(wx, wy, {
+  switch (type) {
+    case 'ball':
+      return createBall(wx, wy, {
         mass: bd.mass ?? 1,
-        radius: mToPx(geo.radius ?? DEFAULT_CIRCLE_RADIUS_M),
+        radius: mToPx(geo.radius ?? DEFAULT_BALL_RADIUS_M),
         hollow: geo.hollow === true,
+        fill: geo.fill,
+        stroke: geo.stroke,
         restitution: mat.restitution,
         muK: mat.muK,
         muS: mat.muS,
         frictionAir: mat.frictionAir,
         isStatic: bd.isStatic === true,
         ropeSegment: mat.ropeSegment === true,
-        // Only set slop for rope nodes — `slop: undefined` overrides Matter's
-        // default and NaNs the collision solve on contact.
         ...(mat.ropeSegment === true
           ? { slop: 0.5, collisionFilter: { group: ROPE_COLLISION_GROUP } }
           : {}),
       });
 
-    case 'ball':
-      return createBall(wx, wy, {
+    case 'point':
+      return createPoint(wx, wy, {
         mass: bd.mass ?? 1,
-        radius: mToPx(geo.radius ?? DEFAULT_BALL_RADIUS_M),
+        radius: mToPx(geo.radius ?? DEFAULT_POINT_RADIUS_M),
+        fill: geo.fill,
+        stroke: geo.stroke,
         restitution: mat.restitution,
         muK: mat.muK,
         muS: mat.muS,
@@ -158,6 +169,7 @@ function createConstraintFromScene(cd, bodyA, bodyB) {
  * @param {{ x: number, y: number }} [opts.origin]
  * @param {boolean} [opts.mergeUiAggregates=false]  Append uiAggregates instead of replacing
  * @param {object[]} [opts.uiAggregates]
+ * @param {object} [opts.parameters]  Named time-dependent scene parameters
  * @returns {Record<string, import('matter-js').Body>}
  */
 function ingestSceneBodies(engine, bodies, constraints, opts = {}) {
@@ -174,31 +186,35 @@ function ingestSceneBodies(engine, bodies, constraints, opts = {}) {
     const body = createBodyFromScene(bd, wx, wy);
     if (!body) continue;
 
-    if ((bd.type === 'box' || bd.type === 'wedge' || bd.type === 'ball' || bd.type === 'point-mass' || bd.type === 'ground') && bd.material) {
-      setMaterialFriction(
-        body,
-        bd.material.muK ?? body._muK ?? body.friction,
-        bd.material.muS ?? body._muS ?? body.frictionStatic,
-      );
-    }
-
     body.label = bd.id;
-    if (bd.material?.stickOnContact === true) {
-      body._stickOnContact = true;
-      // Sticky merges are perfectly inelastic.
-      if (bd.material.restitution == null) body.restitution = 0;
-    }
-    if (bd.material?.lockRotation === true) {
-      Body.setInertia(body, Infinity);
-      body._lockRotation = true;
+    const migrated = migrateBodyV1ToComponents(bd);
+    if (migrated) {
+      attachFromMigration(body, migrated);
+      if (migrated.optional) {
+        attachOptionalFromMigration(body, migrated.optional);
+        if (migrated.optional._frictionAir != null) {
+          body.frictionAir = migrated.optional._frictionAir;
+        }
+      }
     }
     if (bd.material?.ropeSegment === true) {
       applyRopeMaterialFlags(body, bd.material);
     }
+    const parameterDefinitions = bd.parameters
+      ?? (bd.drivenApplied === true ? opts.parameters : null);
+    if (supportsAppliedForce(body) && parameterDefinitions) {
+      setDrivenAppliedParameters(body, parameterDefinitions);
+    }
     if (supportsAppliedForce(body) && bd.drivenApplied === true) {
       setDrivenAppliedForce(body, true);
+      if (typeof bd.drivenAppliedPhaseParameter === 'string') {
+        setDrivenAppliedPhaseParameter(body, bd.drivenAppliedPhaseParameter);
+      }
       if (typeof bd.drivenAppliedForce === 'string' && bd.drivenAppliedForce.trim()) {
         setDrivenAppliedForceExpr(body, bd.drivenAppliedForce);
+      }
+      if (typeof bd.drivenAppliedFrequency === 'string' && bd.drivenAppliedFrequency.trim()) {
+        setDrivenAppliedFrequencyExpr(body, bd.drivenAppliedFrequency);
       }
     }
     if (bd.appliedForce && typeof bd.appliedForce === 'object') {
@@ -289,6 +305,7 @@ export function appendSceneFragment(engine, fragment) {
       origin: { x: o.xm, y: o.ym },
       mergeUiAggregates: true,
       uiAggregates: fragment.uiAggregates,
+      parameters: fragment.parameters,
     },
   );
 }
@@ -318,6 +335,7 @@ export function deserializeScene(doc, engine, opts = {}) {
     origin,
     mergeUiAggregates: false,
     uiAggregates: doc.uiAggregates ?? [],
+    parameters: doc.parameters,
   });
 
   return {

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   setDrivenAppliedForce,
   setDrivenAppliedForceExpr,
+  evaluateDrivenAppliedFrequency,
+  evaluateDrivenAppliedOmega,
   evaluateDrivenAppliedForce,
   isDrivenAppliedForce,
   collectDrivenAppliedAppForces,
@@ -25,7 +27,7 @@ describe('driven applied force', () => {
     }
 
     const engine = loadScene(doc);
-    const box = engine.bodies.find(b => b._newtonType === 'box' || b._newtonType === 'point-mass' || b._newtonType === 'ball')
+    const box = engine.bodies.find(b => b._newtonType === 'box' || b._newtonType === 'ball' || b._newtonType === 'point' || b._newtonType === 'point-mass')
       ?? engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     expect(box).toBeTruthy();
 
@@ -94,15 +96,31 @@ describe('driven applied force', () => {
     expect(evaluateDrivenAppliedForce(b2, 0.25)).toBeCloseTo(5, 8);
   });
 
+  it('tracks instantaneous frequency and angular frequency for a chirped drive', () => {
+    const doc = cloneSceneDocument(demoScenes['../demo/Classic/driven-harmonic-oscillator.json']);
+    const engine = loadScene(doc);
+    const body = findBody(engine, 'mass');
+
+    expect(evaluateDrivenAppliedFrequency(body, 0)).toBeCloseTo(0.4, 8);
+    expect(evaluateDrivenAppliedFrequency(body, 2)).toBeCloseTo(0.42, 8);
+    expect(evaluateDrivenAppliedOmega(body, 2)).toBeCloseTo(2 * Math.PI * 0.42, 8);
+
+    const out = serializeScene(engine);
+    const entry = out.bodies.find(b => b.id === 'mass');
+    expect(entry.parameters.omega.expression).toBe('2pi(0.4 + 0.01t)');
+    expect(entry.drivenAppliedForce).toBe('2sin(omega t)');
+    expect(entry.drivenAppliedPhaseParameter).toBe('omega');
+  });
+
   it('works on circle, point, box, and wedge types', () => {
     const doc = {
       format: 'newton-scene',
-      version: 1,
+      version: 2,
       metricOrigin: { x: 0, y: 0 },
       environment: { gravity: { enabled: false, g: 9.81 } },
       bodies: [
-        { id: 'b0', type: 'ball', position: { x: 0, y: 0 }, mass: 1, geometry: { radius: 0.2 } },
-        { id: 'b1', type: 'point-mass', position: { x: 1, y: 0 }, mass: 1 },
+        { id: 'b0', type: 'point', position: { x: 0, y: 0 }, mass: 1, geometry: { radius: 0.2 } },
+        { id: 'b1', type: 'ball', position: { x: 1, y: 0 }, mass: 1 },
         { id: 'b2', type: 'box', position: { x: 2, y: 0 }, mass: 1, geometry: { width: 0.4, height: 0.4 } },
         { id: 'b3', type: 'wedge', position: { x: 3, y: 0 }, mass: 1, geometry: { width: 0.6, height: 0.4 } },
       ],

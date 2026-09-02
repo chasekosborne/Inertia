@@ -4,10 +4,11 @@
  */
 
 import Matter from 'matter-js';
+import { normalizeRecorderBodyType } from '../scene/schema.js';
 import {
   createBox,
-  createPointMass,
   createBall,
+  createPoint,
   createWedge,
   createAnchor,
   createGround,
@@ -35,7 +36,8 @@ export function createBodyFromSnap(snap) {
   };
 
   let body = null;
-  switch (snap.type) {
+  const type = normalizeRecorderBodyType(snap);
+  switch (type) {
     case 'metric-basis':
       body = createMetricBasis(snap.x, snap.y);
       break;
@@ -52,15 +54,15 @@ export function createBodyFromSnap(snap) {
         height: snap.bHeight ?? 40,
       });
       break;
-    case 'point-mass':
-      body = createPointMass(snap.x, snap.y, {
+    case 'ball':
+      body = createBall(snap.x, snap.y, {
         ...mat,
         radius: snap.radius ?? 10,
       });
       if (snap.hollow) body._hollow = true;
       break;
-    case 'ball':
-      body = createBall(snap.x, snap.y, {
+    case 'point':
+      body = createPoint(snap.x, snap.y, {
         ...mat,
         radius: snap.radius ?? 10,
       });

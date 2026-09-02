@@ -57,7 +57,7 @@ const ID = {
 };
 
 /** Body types that carry an editable v₀ / F. */
-const EDITABLE_TYPES = new Set(['point-mass', 'ball', 'box', 'wedge']);
+const EDITABLE_TYPES = new Set(['ball', 'point', 'point-mass', 'box', 'wedge']);
 
 /** Physics-convention angle (atan2, +y up). Ctrl-snap labels jump in 5° steps. */
 function _formatVectorAngleLabel(angX, angY, snapped) {

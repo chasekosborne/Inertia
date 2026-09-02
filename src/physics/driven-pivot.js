@@ -16,7 +16,7 @@ import { compileExpr } from './expr.js';
 const { Body } = Matter;
 
 /** Default drive: gentle sinusoidal torque (N·m). */
-export const DEFAULT_DRIVEN_TORQUE_EXPR = '0.5*sin(2*pi*t)';
+export const DEFAULT_DRIVEN_TORQUE_EXPR = '0.5sin(2pi t)';
 
 /**
  * Visual spin: 1 N·m → this many rad/s on the checkered disk.

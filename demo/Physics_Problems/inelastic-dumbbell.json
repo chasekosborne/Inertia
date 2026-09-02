@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Inelastic stick — mass into dumbbell",
     "source": "demo",
@@ -29,7 +29,7 @@
   "bodies": [
     {
       "id": "projectile",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.13999999999999999,
         "y": -0.5
@@ -54,7 +54,7 @@
     },
     {
       "id": "dumbbell_top",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0,
         "y": -0.5
@@ -79,7 +79,7 @@
     },
     {
       "id": "dumbbell_bottom",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0,
         "y": 0.5
@@ -123,7 +123,10 @@
     {
       "id": "agg_dumbbell",
       "name": "Dumbbell",
-      "members": ["dumbbell_top", "dumbbell_bottom"]
+      "members": [
+        "dumbbell_top",
+        "dumbbell_bottom"
+      ]
     }
   ]
 }

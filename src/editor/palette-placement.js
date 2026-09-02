@@ -12,14 +12,15 @@
  */
 
 import {
-  createPointMass, createBall, createBox, createWedge, createAnchor,
+  createBall, createPoint, createBox, createWedge, createAnchor,
 } from '../physics/bodies.js';
+import { attachCoreComponents } from '../components/optional-properties.js';
 import { snapWorldCoord } from '../grid.js';
 
 /** Palette tool id → body factory. */
 const FACTORIES = {
   'ball': createBall,
-  'point-mass': createPointMass,
+  'point': createPoint,
   'box': createBox,
   'wedge': createWedge,
   'anchor': createAnchor,
@@ -100,6 +101,7 @@ export class PalettePlacement {
     const body = factory(snapWorldCoord(world.x, snap), snapWorldCoord(world.y, snap));
     if (!body) return;
 
+    attachCoreComponents(body);
     engine.addBody(body);
     onPlaced(body);
   }

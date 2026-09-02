@@ -576,8 +576,8 @@ function _rebuildCompound(physics, old, specs) {
   if (specs.length === 1) {
     // Degenerate: single part becomes a normal body
     const alone = freeParts[0];
-    alone._newtonType = specs[0].type === 'ball' ? 'ball'
-      : specs[0].type === 'point-mass' ? 'point-mass'
+    alone._newtonType = specs[0].type === 'point' ? 'point'
+      : specs[0].type === 'ball' || specs[0].type === 'point-mass' ? 'ball'
       : specs[0].type === 'box' ? 'box'
       : 'box';
     alone._stickOnContact = !!specs[0].stickOnContact;
@@ -740,9 +740,10 @@ function _explodeParts(body, poseSnap = null) {
       vertices: null,
     }];
   }
-  if (t === 'point-mass' || t === 'ball') {
+  if (t === 'ball' || t === 'point' || t === 'point-mass') {
+    const roundType = t === 'point-mass' ? 'ball' : t;
     return [{
-      type: t,
+      type: roundType,
       x: px,
       y: py,
       angle: pang,
@@ -777,7 +778,7 @@ function _explodeParts(body, poseSnap = null) {
 }
 
 function _guessPartType(part) {
-  if (part.circleRadius) return 'point-mass';
+  if (part.circleRadius) return 'ball';
   return 'box';
 }
 
@@ -801,7 +802,7 @@ function _materializePart(spec) {
     });
     part._width = spec.width;
     part._height = spec.height;
-  } else if ((spec.type === 'point-mass' || spec.type === 'ball') && spec.radius) {
+  } else if ((spec.type === 'ball' || spec.type === 'point' || spec.type === 'point-mass') && spec.radius) {
     part = Bodies.polygon(spec.x, spec.y, CIRCLE_HULL_SIDES, spec.radius, {
       ...opts,
       angle: spec.angle,
@@ -826,7 +827,7 @@ function _materializePart(spec) {
 
   part._partType = spec.type;
   Body.setMass(part, Math.max(1e-6, spec.mass));
-  if (spec.type === 'point-mass' || spec.type === 'ball') {
+  if (spec.type === 'ball' || spec.type === 'point' || spec.type === 'point-mass') {
     // Matter setMass inflates circle I: restore disk / ring inertia for rolling.
     const r = part._radius ?? part.circleRadius;
     if (r > 0) {

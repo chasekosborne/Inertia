@@ -23,8 +23,11 @@ function _escapeHtml(s) {
 
 const ICONS = {
   folder: '<svg class="ob-ico" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M1.5 3h4l1 1.5H14.5v8.5h-13V3zm1 2v6.5h11V5.5H6.2L5.2 4H2.5V5z"/></svg>',
+  object: '<svg class="ob-ico" viewBox="0 0 200 200" aria-hidden="true"><g transform="translate(-418.24718,-518.52157)"><circle fill="#0044aa" cx="469.8299" cy="589.68774" r="44.667393"/><rect fill="#aaccff" x="522.34882" y="549.71918" width="88.267006" height="88.267006"/><path fill="#2a7fff" d="m 462.53338,664.51333 -17.00418,-46.38031 48.66862,8.4641 z" transform="matrix(1.4262127,1.7307682,-1.7307682,1.4262127,941.27312,-1047.3563)"/></g></svg>',
   file: '<svg class="ob-ico" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 1.5h5.5L13 5v9.5H4V1.5zm5.5 1v3H12L9.5 2.5z"/></svg>',
   link: '<svg class="ob-ico" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.4" d="M6.5 9.5l3-3M5 8.5l-1.2 1.2a2.1 2.1 0 0 0 3 3L8 11.5M11 7.5l1.2-1.2a2.1 2.1 0 0 0-3-3L8 4.5"/></svg>',
+  parameter: '<span class="ob-parameter-icon" aria-hidden="true">x</span>',
+  tag: '<svg class="ob-ico" viewBox="0 0 200 200" aria-hidden="true"><g transform="translate(-418.24718,-518.52157)"><path fill="currentColor" d="m 486.05068,693.84268 c -6.6014,-5.8255 -44.588,-44.1036 -46.4373,-46.7937 -0.9955,-1.4482 -1.3662,-2.9287 -1.3662,-5.4565 0,-3.1189 0.2649,-3.8042 2.6256,-6.7907 3.9076,-4.9435 69.2351,-69.923 70.9548,-70.5769 1.6747,-0.6366 20.3568,-0.7715 23.3712,-0.1687 1.967,0.3934 1.9689,0.398 1.9726,4.568 0,2.2958 0.276,5.8371 0.6088,7.8695 0.4883,2.9813 0.4166,4.06 -0.371,5.583 -0.537,1.0383 -0.9878,3.3448 -1.0021,5.1257 -0.061,7.6251 5.2698,13.1477 12.7933,13.2542 5.0159,0.071 9.0624,-2.455 11.4373,-7.1396 2.6472,-5.2215 2.0583,-9.9333 -1.8055,-14.4473 -1.5862,-1.8531 -2.2299,-3.3751 -2.7294,-6.4534 -1.1707,-7.2151 -1.2327,-7.0774 2.9598,-6.573 5.9187,0.712 9.0015,1.6768 9.9129,3.1024 1.5199,2.377 3.7751,22.7005 4.5175,40.7108 0.6699,16.2505 3.829,11.339 -28.0115,43.5514 -15.1419,15.3188 -31.7365,31.7756 -36.8767,36.5706 l -9.3459,8.7183 -3.9671,0 -3.9671,0 -5.274,-4.6541 z m 94.248,-81.3215 c -0.8506,-0.8506 -1.5465,-1.9873 -1.5465,-2.526 0,-0.5388 1.2966,-4.0151 2.8813,-7.7254 1.5847,-3.7102 3.755,-10.0161 4.823,-14.0132 1.7366,-6.4999 1.948,-8.2655 2.0016,-16.7183 0.054,-8.4014 -0.09,-9.7745 -1.2865,-12.3635 -3.2838,-7.1018 -9.4167,-11.2477 -16.6556,-11.2579 -6.0982,-0.01 -9.7139,1.4608 -13.8193,5.6178 -5.8628,5.9362 -6.6501,10.153 -4.4203,23.6742 2.021,12.2544 1.546,14.8065 -2.7559,14.8065 -4.0893,0 -4.6966,-1.1813 -6.7149,-13.0618 -2.9206,-17.192 -0.037,-27.3186 9.9401,-34.9106 5.6982,-4.3359 10.6291,-5.7823 18.694,-5.4838 5.7554,0.2131 6.8908,0.4602 10.6754,2.3234 7.3623,3.6245 13.0202,10.762 15.3105,19.3144 1.1225,4.1916 1.0886,16.4732 -0.064,23.081 -0.5073,2.9089 -1.6573,7.8369 -2.5556,10.9511 -2.0324,7.0464 -7.2983,18.2318 -9.0158,19.151 -2.0361,1.0897 -3.8227,0.8102 -5.4918,-0.8589 z"/></g></svg>',
   meta: '<span class="ob-ico-meta">·</span>',
 };
 
@@ -112,7 +115,7 @@ export class ObjectBrowser {
         type: coupleMeta
           ? `${m.kind === 'angle' ? 'angle' : 'length'} · ${coupleMeta}`
           : (m.kind === 'angle' ? 'angle' : 'length'),
-        icon: 'meta',
+        icon: 'tag',
         parentBodyLabel: parent?.bodyLabel ?? null,
         couple: parent?.couple ?? null,
       };
@@ -153,7 +156,7 @@ export class ObjectBrowser {
         id: l.id,
         name: typeof l.text === 'string' ? l.text : l.id,
         type: l.type ?? (l.body ? 'inline' : (l.point ? 'callout' : 'label')),
-        icon: 'meta',
+        icon: 'tag',
         parentBodyLabel: typeof hostLabel === 'string' ? hostLabel : null,
       };
 
@@ -216,6 +219,10 @@ export class ObjectBrowser {
         return id === sel.id && pi === (sel.partIndex ?? -1);
       }
     }
+    if (sel.type === 'parameter' && kind === 'parameter') {
+      return parseInt(row.getAttribute('data-id'), 10) === sel.bodyId
+        && row.getAttribute('data-parameter-name') === sel.parameterName;
+    }
     if (sel.type === 'constraint' && kind === 'constraint') {
       return parseInt(row.getAttribute('data-id'), 10) === sel.id;
     }
@@ -236,7 +243,8 @@ export class ObjectBrowser {
       || (node.kind === 'body' ? `body:${node.id}`
         : node.kind === 'constraint' ? `con:${node.id}`
           : node.kind === 'weld-part' ? `part:${node.id}:${node.partIndex}`
-            : node.kind === 'measurement' ? `meas:${node.id}`
+            : node.kind === 'parameter' ? `parameter:${node.id}:${node.parameterName}`
+              : node.kind === 'measurement' ? `meas:${node.id}`
               : node.kind === 'label' ? `label:${node.id}`
               : `${node.kind}:${node.id ?? node.name}`);
     const hasKids = Array.isArray(node.children) && node.children.length > 0;
@@ -254,7 +262,7 @@ export class ObjectBrowser {
       : renameKind
         ? `data-rename="${renameKind}" data-id="${node.id ?? ''}" data-agg-id="${node.aggId ?? ''}" data-rope-id="${_escapeHtml(node.ropeId ?? '')}"`
         : '';
-    const nameHtml = node.kind === 'label'
+    const nameHtml = node.kind === 'label' || node.kind === 'parameter'
       ? formatMathLabelHtml(node.name)
       : _escapeHtml(node.name);
 
@@ -300,6 +308,9 @@ export class ObjectBrowser {
     if (node.memberIds) parts.push(`data-member-ids="${node.memberIds.join(',')}"`);
     if (node.partIndex != null) parts.push(`data-part-index="${node.partIndex}"`);
     if (node.ropeId) parts.push(`data-rope-id="${_escapeHtml(node.ropeId)}"`);
+    if (node.kind === 'parameter') {
+      parts.push(`data-parameter-name="${_escapeHtml(node.parameterName ?? '')}"`);
+    }
     return parts.join(' ');
   }
 
@@ -312,6 +323,11 @@ export class ObjectBrowser {
     if (sel.type === 'body') {
       if ((node.kind === 'body' || node.kind === 'weld') && node.id === sel.id) return true;
       if (node.memberIds?.includes(sel.id)) return true;
+    }
+    if (sel.type === 'parameter') {
+      if (node.kind === 'parameter' && node.id === sel.bodyId
+        && node.parameterName === sel.parameterName) return true;
+      if ((node.kind === 'body' || node.kind === 'weld') && node.id === sel.bodyId) return true;
     }
     if (sel.type === 'constraint' && node.kind === 'constraint' && node.id === sel.id) return true;
     if (sel.type === 'rope' && node.kind === 'rope' && node.ropeId === sel.ropeId) return true;
@@ -463,6 +479,14 @@ export class ObjectBrowser {
       const id = parseInt(row.getAttribute('data-id'), 10);
       const partIndex = parseInt(row.getAttribute('data-part-index'), 10);
       this._onSelect({ type: 'body', id, partIndex });
+      return;
+    }
+    if (kind === 'parameter') {
+      const bodyId = parseInt(row.getAttribute('data-id'), 10);
+      const parameterName = row.getAttribute('data-parameter-name');
+      if (Number.isFinite(bodyId) && parameterName) {
+        this._onSelect({ type: 'parameter', id: bodyId, bodyId, parameterName });
+      }
       return;
     }
     if (kind === 'aggregate') {

@@ -1015,6 +1015,7 @@ function _loadSceneDocument(doc, source, opts = {}) {
   if (engine.running) engine.pause();
   recorder.stop();
   timeline.setRecording(false);
+  engine.resetSimTime();
   measurements.clearAll();
   labels.clearAll();
 

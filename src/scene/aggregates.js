@@ -166,7 +166,8 @@ export function bodyDisplayName(body) {
   }
   const t = body._newtonType ?? 'body';
   if (t === 'compound') return 'Group';
-  if (t === 'point-mass') return 'Point';
+  if (t === 'ball' || t === 'point-mass') return 'Ball';
+  if (t === 'point') return 'Point';
   if (t === 'anchor') {
     // Prefer pivot_N / anchor_N labels; otherwise "Pivot"
     if (typeof body.label === 'string' && body.label) return body.label.replace(/^anchor_/i, 'pivot_');
@@ -184,7 +185,7 @@ export function weldPartDisplayName(body, partIndex) {
   const meta = body?._weldParts?.[partIndex];
   if (meta?.label) return meta.label;
   const type = meta?.type ?? 'part';
-  const nice = type === 'point-mass' ? 'Point' : (type.charAt(0).toUpperCase() + type.slice(1));
+  const nice = type === 'point' ? 'Point' : (type === 'ball' || type === 'point-mass' ? 'Ball' : (type.charAt(0).toUpperCase() + type.slice(1)));
   return `${nice} ${partIndex + 1}`;
 }
 
@@ -403,6 +404,15 @@ export function buildObjectBrowserTree(engine) {
 
   /** @type {object[]} */
   const roots = [];
+  const parameterChildren = (body) => Object.entries(body._drivenAppliedParameters ?? {})
+    .map(([name, definition]) => ({
+      kind: 'parameter',
+      id: body.id,
+      parameterName: name,
+      name: definition.label || name,
+      type: definition.unit ? `parameter · ${definition.unit}` : 'parameter',
+      icon: 'parameter',
+    }));
 
   // Sticky weld compounds → folders
   for (const b of bodies) {
@@ -431,7 +441,7 @@ export function buildObjectBrowserTree(engine) {
       type: 'compound',
       memberIds: [b.id],
       icon: 'folder',
-      children: [...parts, ...links],
+      children: [...parts, ...parameterChildren(b), ...links],
     });
   }
 
@@ -448,14 +458,14 @@ export function buildObjectBrowserTree(engine) {
           name: bodyDisplayName(m),
           type: 'compound',
           icon: 'folder',
-          children: m._weldParts.map((p, i) => ({
+          children: [...m._weldParts.map((p, i) => ({
             kind: 'weld-part',
             id: m.id,
             partIndex: i,
             name: weldPartDisplayName(m, i),
             type: p.type ?? 'part',
             icon: 'file',
-          })),
+          })), ...parameterChildren(m)],
         };
       }
       // Constraints that leave the aggregate still nest under the body,
@@ -475,8 +485,8 @@ export function buildObjectBrowserTree(engine) {
         id: m.id,
         name: bodyDisplayName(m),
         type: m._newtonType ?? 'body',
-        icon: 'file',
-        children: external,
+        icon: 'object',
+        children: [...parameterChildren(m), ...external],
       };
     });
     const internalLinks = constraintsWithin(engine, a.memberIds).map(c => ({
@@ -514,8 +524,8 @@ export function buildObjectBrowserTree(engine) {
       id: b.id,
       name: bodyDisplayName(b),
       type: (b._newtonType === 'anchor' ? 'pivot' : (b._newtonType ?? 'body')),
-      icon: 'file',
-      children: links,
+      icon: 'object',
+      children: [...parameterChildren(b), ...links],
     });
   }
 

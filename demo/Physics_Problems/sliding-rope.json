@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Rope sliding off a frictionless table",
     "source": "demo",
@@ -48,7 +48,7 @@
     },
     {
       "id": "rope_0",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.6,
         "y": -0.025
@@ -79,7 +79,7 @@
     },
     {
       "id": "rope_1",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.58,
         "y": -0.025
@@ -110,7 +110,7 @@
     },
     {
       "id": "rope_2",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.56,
         "y": -0.025
@@ -141,7 +141,7 @@
     },
     {
       "id": "rope_3",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.54,
         "y": -0.025
@@ -172,7 +172,7 @@
     },
     {
       "id": "rope_4",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.52,
         "y": -0.025
@@ -203,7 +203,7 @@
     },
     {
       "id": "rope_5",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.5,
         "y": -0.025
@@ -234,7 +234,7 @@
     },
     {
       "id": "rope_6",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.4800000000000002,
         "y": -0.025
@@ -265,7 +265,7 @@
     },
     {
       "id": "rope_7",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.46,
         "y": -0.025
@@ -296,7 +296,7 @@
     },
     {
       "id": "rope_8",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.4400000000000002,
         "y": -0.025
@@ -327,7 +327,7 @@
     },
     {
       "id": "rope_9",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.42,
         "y": -0.025
@@ -358,7 +358,7 @@
     },
     {
       "id": "rope_10",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.4000000000000001,
         "y": -0.025
@@ -389,7 +389,7 @@
     },
     {
       "id": "rope_11",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.3800000000000001,
         "y": -0.025
@@ -420,7 +420,7 @@
     },
     {
       "id": "rope_12",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.36,
         "y": -0.025
@@ -451,7 +451,7 @@
     },
     {
       "id": "rope_13",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.34,
         "y": -0.025
@@ -482,7 +482,7 @@
     },
     {
       "id": "rope_14",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.32,
         "y": -0.025
@@ -513,7 +513,7 @@
     },
     {
       "id": "rope_15",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.3,
         "y": -0.025
@@ -544,7 +544,7 @@
     },
     {
       "id": "rope_16",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.2800000000000002,
         "y": -0.025
@@ -575,7 +575,7 @@
     },
     {
       "id": "rope_17",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.26,
         "y": -0.025
@@ -606,7 +606,7 @@
     },
     {
       "id": "rope_18",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.2400000000000002,
         "y": -0.025
@@ -637,7 +637,7 @@
     },
     {
       "id": "rope_19",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.22,
         "y": -0.025
@@ -668,7 +668,7 @@
     },
     {
       "id": "rope_20",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.2000000000000002,
         "y": -0.025
@@ -699,7 +699,7 @@
     },
     {
       "id": "rope_21",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.1800000000000002,
         "y": -0.025
@@ -730,7 +730,7 @@
     },
     {
       "id": "rope_22",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.16,
         "y": -0.025
@@ -761,7 +761,7 @@
     },
     {
       "id": "rope_23",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.1400000000000001,
         "y": -0.025
@@ -792,7 +792,7 @@
     },
     {
       "id": "rope_24",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.1199999999999999,
         "y": -0.025
@@ -823,7 +823,7 @@
     },
     {
       "id": "rope_25",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.1,
         "y": -0.025
@@ -854,7 +854,7 @@
     },
     {
       "id": "rope_26",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.08,
         "y": -0.025
@@ -885,7 +885,7 @@
     },
     {
       "id": "rope_27",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.06,
         "y": -0.025
@@ -916,7 +916,7 @@
     },
     {
       "id": "rope_28",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.04,
         "y": -0.025
@@ -947,7 +947,7 @@
     },
     {
       "id": "rope_29",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1.02,
         "y": -0.025
@@ -978,7 +978,7 @@
     },
     {
       "id": "rope_30",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -1,
         "y": -0.025
@@ -1009,7 +1009,7 @@
     },
     {
       "id": "rope_31",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.9800000000000001,
         "y": -0.025
@@ -1040,7 +1040,7 @@
     },
     {
       "id": "rope_32",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.96,
         "y": -0.025
@@ -1071,7 +1071,7 @@
     },
     {
       "id": "rope_33",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.9400000000000001,
         "y": -0.025
@@ -1102,7 +1102,7 @@
     },
     {
       "id": "rope_34",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.9199999999999999,
         "y": -0.025
@@ -1133,7 +1133,7 @@
     },
     {
       "id": "rope_35",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.9,
         "y": -0.025
@@ -1164,7 +1164,7 @@
     },
     {
       "id": "rope_36",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.8800000000000001,
         "y": -0.025
@@ -1195,7 +1195,7 @@
     },
     {
       "id": "rope_37",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.86,
         "y": -0.025
@@ -1226,7 +1226,7 @@
     },
     {
       "id": "rope_38",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.8400000000000001,
         "y": -0.025
@@ -1257,7 +1257,7 @@
     },
     {
       "id": "rope_39",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.82,
         "y": -0.025
@@ -1288,7 +1288,7 @@
     },
     {
       "id": "rope_40",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.8,
         "y": -0.025
@@ -1319,7 +1319,7 @@
     },
     {
       "id": "rope_41",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.7800000000000001,
         "y": -0.025
@@ -1350,7 +1350,7 @@
     },
     {
       "id": "rope_42",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.76,
         "y": -0.025
@@ -1381,7 +1381,7 @@
     },
     {
       "id": "rope_43",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.7400000000000001,
         "y": -0.025
@@ -1412,7 +1412,7 @@
     },
     {
       "id": "rope_44",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.72,
         "y": -0.025
@@ -1443,7 +1443,7 @@
     },
     {
       "id": "rope_45",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.7000000000000001,
         "y": -0.025
@@ -1474,7 +1474,7 @@
     },
     {
       "id": "rope_46",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.6800000000000002,
         "y": -0.025
@@ -1505,7 +1505,7 @@
     },
     {
       "id": "rope_47",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.66,
         "y": -0.025
@@ -1536,7 +1536,7 @@
     },
     {
       "id": "rope_48",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.6400000000000001,
         "y": -0.025
@@ -1567,7 +1567,7 @@
     },
     {
       "id": "rope_49",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.62,
         "y": -0.025
@@ -1598,7 +1598,7 @@
     },
     {
       "id": "rope_50",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.6000000000000001,
         "y": -0.025
@@ -1629,7 +1629,7 @@
     },
     {
       "id": "rope_51",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.5800000000000001,
         "y": -0.025
@@ -1660,7 +1660,7 @@
     },
     {
       "id": "rope_52",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.5599999999999999,
         "y": -0.025
@@ -1691,7 +1691,7 @@
     },
     {
       "id": "rope_53",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.54,
         "y": -0.025
@@ -1722,7 +1722,7 @@
     },
     {
       "id": "rope_54",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.5199999999999999,
         "y": -0.025
@@ -1753,7 +1753,7 @@
     },
     {
       "id": "rope_55",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.5,
         "y": -0.025
@@ -1784,7 +1784,7 @@
     },
     {
       "id": "rope_56",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.4800000000000001,
         "y": -0.025
@@ -1815,7 +1815,7 @@
     },
     {
       "id": "rope_57",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.45999999999999996,
         "y": -0.025
@@ -1846,7 +1846,7 @@
     },
     {
       "id": "rope_58",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.44000000000000006,
         "y": -0.025
@@ -1877,7 +1877,7 @@
     },
     {
       "id": "rope_59",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.41999999999999993,
         "y": -0.025
@@ -1908,7 +1908,7 @@
     },
     {
       "id": "rope_60",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.4,
         "y": -0.025
@@ -1939,7 +1939,7 @@
     },
     {
       "id": "rope_61",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.3800000000000001,
         "y": -0.025
@@ -1970,7 +1970,7 @@
     },
     {
       "id": "rope_62",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.36,
         "y": -0.025
@@ -2001,7 +2001,7 @@
     },
     {
       "id": "rope_63",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.3400000000000001,
         "y": -0.025
@@ -2032,7 +2032,7 @@
     },
     {
       "id": "rope_64",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.31999999999999995,
         "y": -0.025
@@ -2063,7 +2063,7 @@
     },
     {
       "id": "rope_65",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.30000000000000004,
         "y": -0.025
@@ -2094,7 +2094,7 @@
     },
     {
       "id": "rope_66",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.2800000000000001,
         "y": -0.025
@@ -2125,7 +2125,7 @@
     },
     {
       "id": "rope_67",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.25999999999999995,
         "y": -0.025
@@ -2156,7 +2156,7 @@
     },
     {
       "id": "rope_68",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.24000000000000005,
         "y": -0.025
@@ -2187,7 +2187,7 @@
     },
     {
       "id": "rope_69",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.21999999999999995,
         "y": -0.025
@@ -2218,7 +2218,7 @@
     },
     {
       "id": "rope_70",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.2,
         "y": -0.025
@@ -2249,7 +2249,7 @@
     },
     {
       "id": "rope_71",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.18000000000000008,
         "y": -0.025
@@ -2280,7 +2280,7 @@
     },
     {
       "id": "rope_72",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.15999999999999998,
         "y": -0.025
@@ -2311,7 +2311,7 @@
     },
     {
       "id": "rope_73",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.14000000000000004,
         "y": -0.025
@@ -2342,7 +2342,7 @@
     },
     {
       "id": "rope_74",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.11999999999999994,
         "y": -0.025
@@ -2373,7 +2373,7 @@
     },
     {
       "id": "rope_75",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.1,
         "y": -0.025
@@ -2404,7 +2404,7 @@
     },
     {
       "id": "rope_76",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.08000000000000007,
         "y": -0.025
@@ -2435,7 +2435,7 @@
     },
     {
       "id": "rope_77",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.05999999999999997,
         "y": -0.025
@@ -2466,7 +2466,7 @@
     },
     {
       "id": "rope_78",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.040000000000000036,
         "y": -0.025
@@ -2497,7 +2497,7 @@
     },
     {
       "id": "rope_79",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": -0.01999999999999993,
         "y": -0.025
@@ -2528,7 +2528,7 @@
     },
     {
       "id": "rope_80",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0,
         "y": -0.025
@@ -2559,7 +2559,7 @@
     },
     {
       "id": "rope_81",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": -0.0049999999999999975
@@ -2590,7 +2590,7 @@
     },
     {
       "id": "rope_82",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.015000000000000006
@@ -2621,7 +2621,7 @@
     },
     {
       "id": "rope_83",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.034999999999999996
@@ -2652,7 +2652,7 @@
     },
     {
       "id": "rope_84",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.055000000000000014
@@ -2683,7 +2683,7 @@
     },
     {
       "id": "rope_85",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.07500000000000001
@@ -2714,7 +2714,7 @@
     },
     {
       "id": "rope_86",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.095
@@ -2745,7 +2745,7 @@
     },
     {
       "id": "rope_87",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.11499999999999999
@@ -2776,7 +2776,7 @@
     },
     {
       "id": "rope_88",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.13500000000000004
@@ -2807,7 +2807,7 @@
     },
     {
       "id": "rope_89",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.15500000000000003
@@ -2838,7 +2838,7 @@
     },
     {
       "id": "rope_90",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.17500000000000002
@@ -2869,7 +2869,7 @@
     },
     {
       "id": "rope_91",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.19500000000000003
@@ -2900,7 +2900,7 @@
     },
     {
       "id": "rope_92",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.215
@@ -2931,7 +2931,7 @@
     },
     {
       "id": "rope_93",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.23500000000000001
@@ -2962,7 +2962,7 @@
     },
     {
       "id": "rope_94",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.25499999999999995
@@ -2993,7 +2993,7 @@
     },
     {
       "id": "rope_95",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.275
@@ -3024,7 +3024,7 @@
     },
     {
       "id": "rope_96",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.29500000000000004
@@ -3055,7 +3055,7 @@
     },
     {
       "id": "rope_97",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.315
@@ -3086,7 +3086,7 @@
     },
     {
       "id": "rope_98",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.335
@@ -3117,7 +3117,7 @@
     },
     {
       "id": "rope_99",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.355
@@ -3148,7 +3148,7 @@
     },
     {
       "id": "rope_100",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.025,
         "y": 0.375

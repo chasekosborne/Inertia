@@ -8,12 +8,12 @@
 import Matter from 'matter-js';
 import { getMetricOriginWorldPx } from '../../world-origin.js';
 import {
-  mToPx, DEFAULT_CIRCLE_RADIUS_M, DEFAULT_BALL_RADIUS_M, matterVelToDisplayMS, PX_PER_M,
+  mToPx, DEFAULT_BALL_RADIUS_M, DEFAULT_POINT_RADIUS_M, matterVelToDisplayMS, PX_PER_M,
   getForcePxPerN, getVelocityPxPerMs, getWeightPxPerKg,
 } from '../../units.js';
 import { BOX_FILL_HEX, BOX_STROKE_HEX, boxOutlineStrokePx, circleRingStrokePx, CIRCLE_OUTLINE_STROKE_PX,
          wedgeVertsCentred, wedgeOutlineStrokePx, ANCHOR_PIVOT_R, ANCHOR_STROKE_PX,
-         anchorTriangleLocalVerts } from '../../physics/bodies.js';
+         anchorTriangleLocalVerts, groundVisualPosition } from '../../physics/bodies.js';
 import {
   getAppliedForce,
   isDrivenAppliedForce,
@@ -32,8 +32,8 @@ import { setSvgMathLabel } from '../../math-text.js';
 import { ropeSelection, ropeStrokeWidthPx } from '../../physics/rope.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const DEFAULT_CIRCLE_R = mToPx(DEFAULT_CIRCLE_RADIUS_M);
 const DEFAULT_BALL_R = mToPx(DEFAULT_BALL_RADIUS_M);
+const DEFAULT_POINT_R = mToPx(DEFAULT_POINT_RADIUS_M);
 
 /**
  * Shortest arrow the renderer will actually draw (world px). Below this
@@ -87,14 +87,14 @@ function el(tag, attrs = {}) {
 
 /** Live Matter body eligible for a trajectory trail. */
 function _traceBody(b) {
-  if (!b || b.isStatic) return false;
+  if (!b || b.isStatic || b._ropeSegment) return false;
   const t = b._newtonType;
   return t !== 'metric-basis' && t !== 'anchor' && t !== 'ground';
 }
 
 /** Recorded body snapshot eligible for a trajectory trail. */
 function _traceSnap(b) {
-  if (!b || b.isStatic) return false;
+  if (!b || b.isStatic || b.ropeSegment) return false;
   const t = b.type;
   return t !== 'metric-basis' && t !== 'anchor' && t !== 'ground';
 }
@@ -495,9 +495,15 @@ export class SvgRenderer {
 
   _updateBodyGroup(g, body) {
     g.innerHTML = '';
-    const { x, y } = body.position;
+    let type  = body._newtonType;
+    if (type === 'point-mass') type = 'ball';
+    else if (type === 'ball' && !body._hollow && !body._fill
+      && (body._radius ?? body.circleRadius ?? 0) <= mToPx(DEFAULT_POINT_RADIUS_M) * 1.25) {
+      type = 'point';
+    }
+    const pos = type === 'ground' ? groundVisualPosition(body) : body.position;
+    const { x, y } = pos;
     const angle = body.angle;
-    const type  = body._newtonType;
 
     g.setAttribute('transform', `translate(${x},${y}) rotate(${angle * 180 / Math.PI})`);
 
@@ -526,19 +532,21 @@ export class SvgRenderer {
         const part = body.parts[i];
         const partIndex = i - start;
         const meta = body._weldParts?.[partIndex];
-        const pType = meta?.type ?? part._partType ?? 'box';
-        if (pType === 'point-mass' || pType === 'ball' || part.circleRadius) {
+        let pType = meta?.type ?? part._partType ?? 'box';
+        if (pType === 'point-mass') pType = 'ball';
+        if (pType === 'ball' || pType === 'point' || part.circleRadius) {
           const r = meta?.radius ?? part._radius ?? part.circleRadius ?? 10;
           const hollow = meta?.hollow === true || part._hollow === true;
           const s = circleRingStrokePx(r);
-          // Circle (point-mass): box-grey fill. Point (ball): solid ink.
-          const greyFill = pType === 'point-mass' && !hollow;
+          const isBall = pType === 'ball';
+          const greyFill = isBall && !hollow;
+          const customFill = meta?.fill;
           g.appendChild(el('circle', {
             cx: part.position.x, cy: part.position.y,
             r: hollow || greyFill ? Math.max(0.5, r - s / 2) : r,
-            fill: hollow ? 'none' : (greyFill ? BOX_FILL_HEX : STYLE.ink),
-            stroke: hollow ? STYLE.ink : (greyFill ? BOX_STROKE_HEX : 'none'),
-            'stroke-width': hollow || greyFill ? s : 0,
+            fill: hollow ? 'none' : (customFill ?? (greyFill ? BOX_FILL_HEX : STYLE.ink)),
+            stroke: hollow ? STYLE.ink : (greyFill ? BOX_STROKE_HEX : (meta?.stroke ?? 'none')),
+            'stroke-width': hollow || greyFill ? s : (meta?.stroke ? Math.max(0.75, r * 0.08) : 0),
             class: 'body-shape',
             'data-part-index': partIndex,
           }));
@@ -575,11 +583,11 @@ export class SvgRenderer {
       }));
       return;
     }
-    if (type === 'point-mass') {
+    if (type === 'ball') {
       if (body._ropeSegment) {
         // Nodes are invisible: the rope is one rounded stroke through centres.
         // Keep a transparent hit target so the chain stays selectable.
-        const r = body._radius ?? DEFAULT_CIRCLE_R;
+        const r = body._radius ?? DEFAULT_BALL_R;
         g.appendChild(el('circle', {
           cx: 0, cy: 0, r,
           fill: 'transparent',
@@ -588,24 +596,25 @@ export class SvgRenderer {
         }));
         return;
       }
-      // Circle: box-grey fill (hollow ring when body._hollow).
-      const r = body._radius ?? DEFAULT_CIRCLE_R;
+      const r = body._radius ?? DEFAULT_BALL_R;
       const s = circleRingStrokePx(r);
       const hollow = body._hollow === true;
       const circle = el('circle', {
         cx: 0, cy: 0, r: Math.max(0.5, r - s / 2),
-        fill: hollow ? 'none' : BOX_FILL_HEX,
-        stroke: hollow ? STYLE.ink : BOX_STROKE_HEX,
+        fill: hollow ? 'none' : (body._fill ?? BOX_FILL_HEX),
+        stroke: hollow ? STYLE.ink : (body._stroke ?? BOX_STROKE_HEX),
         'stroke-width': s,
-        class: hollow ? 'body-shape circle-ring' : 'body-shape point-body',
+        class: hollow ? 'body-shape circle-ring' : 'body-shape ball-body',
       });
       g.appendChild(circle);
-    } else if (type === 'ball') {
-      const r = body._radius ?? DEFAULT_BALL_R;
+    } else if (type === 'point') {
+      const r = body._radius ?? DEFAULT_POINT_R;
       const circle = el('circle', {
         cx: 0, cy: 0, r,
-        fill: STYLE.ink,
-        class: 'body-shape ball-body',
+        fill: body._fill ?? STYLE.ink,
+        stroke: body._stroke ?? 'none',
+        'stroke-width': body._stroke ? Math.max(0.75, r * 0.08) : 0,
+        class: 'body-shape point-body',
       });
       g.appendChild(circle);
     } else if (type === 'box') {
@@ -672,16 +681,16 @@ export class SvgRenderer {
     } else if (type === 'ground') {
       const w = body._width  ?? 400;
       const h = body._height ?? 20;
+      g.appendChild(el('rect', {
+        x: -w / 2, y: -h / 2,
+        width: w, height: h,
+        fill: 'url(#hatch)',
+      }));
       g.appendChild(el('line', {
         x1: -w / 2, y1: -h / 2,
         x2: w / 2, y2: -h / 2,
         stroke: STYLE.ink, 'stroke-width': 2,
         class: 'body-shape',
-      }));
-      g.appendChild(el('rect', {
-        x: -w / 2, y: -h / 2,
-        width: w, height: h,
-        fill: 'url(#hatch)',
       }));
       return;
     } else {
@@ -937,6 +946,17 @@ export class SvgRenderer {
         const wey  = py + (g.y / gMag) * wLen;
         this._drawVector(px, py, wex, wey, STYLE.forceColor, 'W', {
           stickyKey: `${b.id}:W`,
+          _labelKeysSeen: labelKeysSeen,
+        });
+      }
+
+      // ── Air drag F_drag (red): opposite the body's current velocity ──
+      const drag = b._airDragVis;
+      if (drag && Number.isFinite(drag.fxN) && Number.isFinite(drag.fyN)) {
+        const fex = px + drag.fxN * getForcePxPerN();
+        const fey = py + drag.fyN * getForcePxPerN();
+        this._drawVector(px, py, fex, fey, STYLE.forceColor, 'F_drag', {
+          stickyKey: `${b.id}:F_drag`,
           _labelKeysSeen: labelKeysSeen,
         });
       }

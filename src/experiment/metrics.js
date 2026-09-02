@@ -477,7 +477,7 @@ export function metricsForScene(doc, opts = {}) {
       },
     });
 
-    if (b.type === 'box' || b.type === 'ball' || b.type === 'wedge' || b.type === 'point-mass') {
+    if (b.type === 'box' || b.type === 'ball' || b.type === 'point' || b.type === 'point-mass' || b.type === 'wedge') {
       out.push({
         id: `F_slip:${b.id}`,
         label: `${MATH_PLAIN.F} to slip`,

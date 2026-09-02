@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Simple pendulum",
     "source": "demo",
@@ -38,7 +38,7 @@
     },
     {
       "id": "bob",
-      "type": "ball",
+      "type": "point",
       "label": "bob",
       "position": {
         "x": 0.6882917236212552,

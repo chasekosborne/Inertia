@@ -50,14 +50,18 @@ function tokenize(src) {
     .replace(/−/g, '-')
     .replace(/\u2212/g, '-');
 
-  // Implicit multiplication (order matters)
+  // Implicit multiplication (order matters). Insert the operator before the
+  // complete following identifier, so `2sin(...)` becomes `2*sin(...)`
+  // instead of splitting it into `2*s` + `in(...)`.
   s = s
-    .replace(/(\d(?:\.\d*)?|\.\d+)\s*(pi|e|t|[a-zA-Z])/gi, '$1*$2')
+    .replace(/(\d(?:\.\d*)?|\.\d+)\s*(?=(?:pi|e|t|[a-zA-Z]))/gi, '$1*')
+    .replace(/([a-zA-Z_][a-zA-Z_0-9]*)\s+(?=[a-zA-Z_])/g, '$1*')
     .replace(/(pi|e|t)\s*(\d)/gi, '$1*$2')
     .replace(/(pi|e|t)\s*(pi|e|t)/gi, '$1*$2')
-    .replace(/\)\s*(\d|pi|e|t|\()/gi, ')*$1')
-    .replace(/(pi|e|t|\d)\s*\(/gi, '$1*(')
-    .replace(/\)\s*([a-zA-Z])/g, ')*$1');
+    .replace(/\)\s*(?=(?:\d|pi|e|t|[a-zA-Z]|\())/gi, ')*')
+    // Only treat a standalone `t(` / `pi(` / `2(` as multiplication;
+    // otherwise the final `t` in `sqrt(` would be rewritten as `sqrt*(`.
+    .replace(/(^|[^a-zA-Z])(pi|e|t|\d)\s*\(/gi, '$1$2*(');
 
   /** @type {object[]} */
   const tokens = [];
@@ -96,7 +100,7 @@ function tokenize(src) {
  * Recursive-descent parser → AST.
  * @param {object[]} tokens
  */
-function parse(tokens) {
+function parse(tokens, variableNames = new Set()) {
   let i = 0;
   const peek = () => tokens[i];
   const take = () => tokens[i++];
@@ -179,7 +183,7 @@ function parse(tokens) {
         }
         return { type: 'call', name, args };
       }
-      if (name === 't' || name === 'pi' || name === 'e') {
+      if (name === 't' || name === 'pi' || name === 'e' || variableNames.has(name)) {
         return { type: 'id', name };
       }
       throw new Error(`Unknown identifier "${name}"`);
@@ -194,7 +198,7 @@ function parse(tokens) {
 
 /**
  * @param {object} ast
- * @param {{ t: number }} env
+ * @param {{ t: number, [name: string]: number }} env
  */
 function evalAst(ast, env) {
   switch (ast.type) {
@@ -203,7 +207,7 @@ function evalAst(ast, env) {
       if (ast.name === 't') return env.t;
       if (ast.name === 'pi') return Math.PI;
       if (ast.name === 'e') return Math.E;
-      return NaN;
+      return Number(env[ast.name]);
     case 'unary': {
       const v = evalAst(ast.arg, env);
       return ast.op === '-' ? -v : v;
@@ -232,14 +236,18 @@ function evalAst(ast, env) {
 /**
  * Compile an expression string.
  * @param {string} src
- * @returns {{ ok: true, source: string, eval: (env: {t:number}) => number }
+ * @param {{ variables?: Iterable<string> }} [opts]
+ * @returns {{ ok: true, source: string, eval: (env: {t:number, [name: string]: number}) => number }
  *   |{ ok: false, error: string }}
  */
-export function compileExpr(src) {
+export function compileExpr(src, opts = {}) {
   const tok = tokenize(src);
   if (!tok.ok) return tok;
   try {
-    const ast = parse(tok.tokens);
+    const variableNames = new Set(
+      [...(opts.variables ?? [])].map(name => String(name).toLowerCase()),
+    );
+    const ast = parse(tok.tokens, variableNames);
     const source = String(src).trim();
     return {
       ok: true,
@@ -247,7 +255,8 @@ export function compileExpr(src) {
       eval(env) {
         const t = Number(env?.t);
         if (!isFinite(t)) return NaN;
-        const v = evalAst(ast, { t });
+        const values = { ...env, t };
+        const v = evalAst(ast, values);
         return isFinite(v) ? v : NaN;
       },
     };
@@ -341,6 +350,7 @@ export function exprToLatex(expr) {
 
   s = s
     .replace(/\bpi\b/g, '\\pi')
+    .replace(/\bomega\b/gi, '\\omega')
     .replace(/\*/g, '\\cdot ')
     .replace(/\^([a-zA-Z_]\w*|\([^)]+\))/g, (_, p) => `^{${p}}`)
     .replace(/\^(\d+)/g, '^{$1}');

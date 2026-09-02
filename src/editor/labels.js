@@ -9,6 +9,9 @@
  *   Callout (dynamic / static object anchor):
  *     { "text": "P", "target": { "kind": "body", "body": "bob" }, "offset": { "x": 0.2, "y": 0.1 } }
  *     Set `"dynamic": false` and optional `"frozen": { "x": 120, "y": 80 }` (world px) to pin the leader tip.
+ *   Live property value:
+ *     { "text": "F(t) = {{value}}", "valueBinding": { "body": "mass", "property": "drivenAppliedForce", "format": "latex" } }
+ *     `{{value}}` is refreshed from the named body on every render.
  *
  * Tool UX:
  *   Alt+click on a body  → inline label at the click (inside/on the object).
@@ -21,6 +24,8 @@
 import { PX_PER_M, mToPx, pxToM } from '../units.js';
 import { COLORS, FONT_DIAGRAM } from '../theme.js';
 import { setSvgMathLabel } from '../math-text.js';
+import { exprToLatex } from '../physics/expr.js';
+import { evaluateDrivenAppliedOmega } from '../physics/applied-force.js';
 import { wedgeAABBCenterWorld } from '../physics/bodies.js';
 import { worldToBodyLocal } from '../physics/layout-anchors.js';
 import { snapWorldCoord } from '../grid.js';
@@ -149,6 +154,102 @@ function pointMToWorldPx(sceneDoc, pointM) {
   };
 }
 
+/**
+ * Read a body property using the stable scene/body property names exposed by
+ * the inspector. Nested paths are supported, e.g. `appliedForce.F`.
+ *
+ * @param {object|null|undefined} body
+ * @param {string} property
+ * @returns {unknown}
+ */
+export function readLabelProperty(body, property) {
+  if (!body || typeof property !== 'string' || !property.trim()) return null;
+  const path = property.trim();
+  if (path === 'drivenAppliedForce') return body._drivenAppliedExpr ?? body.drivenAppliedForce ?? null;
+  if (path === 'drivenAppliedFrequency') {
+    return body._drivenAppliedFrequencyExpr ?? body.drivenAppliedFrequency ?? null;
+  }
+  if (path === 'drivenAppliedOmega') return body._drivenAppliedLastOmega ?? null;
+  if (path === 'drivenApplied.error') return body._drivenAppliedError ?? null;
+  if (path === 'appliedForce') return body._appliedForce ?? body.appliedForce ?? null;
+  if (path === 'appliedForce.F') return body._appliedForce?.F ?? body.appliedForce?.F ?? null;
+  if (path === 'appliedForce.thetaDeg') return body._appliedForce?.thetaDeg ?? body.appliedForce?.thetaDeg ?? null;
+
+  let value = body;
+  for (const part of path.split('.')) {
+    if (value == null || (typeof value !== 'object' && typeof value !== 'function')) return null;
+    value = value[part];
+  }
+  return value;
+}
+
+/** @param {unknown} value @param {object} binding */
+function formatLabelValue(value, binding = {}) {
+  if (value == null || value === '') return '—';
+  if (binding.format === 'latex'
+    || binding.property === 'drivenAppliedForce'
+    || binding.property === 'drivenAppliedFrequency') {
+    return exprToLatex(String(value));
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (Math.abs(value) >= 1e4 || (Math.abs(value) > 0 && Math.abs(value) < 1e-4)) {
+      return value.toExponential(3);
+    }
+    return String(Number(value.toPrecision(5)));
+  }
+  return String(value);
+}
+
+/**
+ * Resolve the text painted by a label. `{{value}}` is replaced by the bound
+ * property, while direct placeholders such as `{{mass.drivenAppliedForce}}`
+ * are also supported for scene-authored labels.
+ *
+ * @param {object} item
+ * @param {import('../physics/engine.js').PhysicsEngine} engine
+ * @returns {string}
+ */
+export function resolveLabelText(item, engine) {
+  const template = String(item?.text ?? '');
+  const binding = item?.valueBinding;
+  let boundValue = null;
+  if (binding && typeof binding === 'object') {
+    const bodyLabel = binding.body ?? binding.object;
+    const body = typeof bodyLabel === 'string'
+      ? engine?.bodies?.find(b => b.label === bodyLabel)
+      : null;
+    let value = readLabelProperty(body, binding.property);
+    if (binding.property === 'drivenAppliedOmega') {
+      value = evaluateDrivenAppliedOmega(body, engine?.simTime) ?? value;
+    }
+    boundValue = formatLabelValue(value, binding);
+  }
+
+  let usedBoundValue = false;
+  const text = template.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_, rawPath) => {
+    const path = String(rawPath).trim();
+    if (path === 'value') {
+      usedBoundValue = true;
+      return boundValue ?? '—';
+    }
+    const dot = path.indexOf('.');
+    if (dot <= 0) return '—';
+    const body = engine?.bodies?.find(b => b.label === path.slice(0, dot));
+    const property = path.slice(dot + 1);
+    let value = readLabelProperty(body, property);
+    if (property === 'drivenAppliedOmega') {
+      value = evaluateDrivenAppliedOmega(body, engine?.simTime) ?? value;
+    }
+    return formatLabelValue(value, { property });
+  });
+  // Selecting a property in the inspector should make it visible even when
+  // the user left the original label text unchanged.
+  if (binding && !usedBoundValue && boundValue != null) {
+    return text ? `${text} ${boundValue}` : boundValue;
+  }
+  return text;
+}
+
 export class LabelManager {
   /**
    * @param {object} opts
@@ -255,7 +356,7 @@ export class LabelManager {
   /**
    * Click on the canvas to attach the label (from properties panel).
    * @param {string} id
-   * @param {'inline'|'callout-target'|'callout-world'} mode
+   * @param {'inline'|'callout-target'|'callout-world'|'standalone'} mode
    */
   beginPick(id, mode) {
     if (!this.getById(id)) return;
@@ -270,12 +371,21 @@ export class LabelManager {
    * Apply attach mode from the properties panel.
    * "Inside object" with a known host → centered inline (no leader), no pick needed.
    * @param {string} id
-   * @param {'inline'|'callout-target'|'callout-world'} mode
+   * @param {'inline'|'callout-target'|'callout-world'|'standalone'} mode
    * @returns {'done'|'pick'} whether a canvas pick is still required
    */
   setAttachMode(id, mode) {
     const item = this.getById(id);
     if (!item) return 'done';
+
+    if (mode === 'standalone') {
+      this._onBeforeChange?.();
+      this._makeStandalone(item);
+      this._pickMode = null;
+      this._onPickModeChange?.();
+      this.sync();
+      return 'done';
+    }
 
     if (mode === 'inline') {
       const body = this._hostBodyForItem(item);
@@ -311,6 +421,26 @@ export class LabelManager {
     delete item.textOffsetM;
     delete item.positionM;
     delete item.frozenTarget;
+    item.dynamic = undefined;
+  }
+
+  /**
+   * Convert a label to free text at its current rendered position.
+   * @param {object} item
+   */
+  _makeStandalone(item) {
+    const position = this._resolveTextPos(item)
+      ?? this._resolveTarget(item)
+      ?? this._getMetricOriginWorldPx();
+    item.placement = 'standalone';
+    item.positionM = this._worldPxToPointM(position);
+    item.textOffsetM = { x: 0, y: 0 };
+    delete item.targetAnchor;
+    delete item.pointM;
+    delete item.frozenTarget;
+    delete item.bodyLabel;
+    delete item.bodyId;
+    delete item.offsetM;
     item.dynamic = undefined;
   }
 
@@ -604,6 +734,28 @@ export class LabelManager {
   }
 
   /**
+   * Bind `{{value}}` in a label template to a property of a named body.
+   * @param {string} id
+   * @param {{ body?: string, object?: string, property?: string, format?: 'text'|'latex' }|null} binding
+   */
+  setValueBinding(id, binding) {
+    const item = this.getById(id);
+    if (!item) return;
+    const body = binding?.body ?? binding?.object;
+    const property = binding?.property;
+    if (typeof body !== 'string' || !body || typeof property !== 'string' || !property) {
+      delete item.valueBinding;
+    } else {
+      item.valueBinding = {
+        body,
+        property,
+        ...(binding?.format === 'latex' ? { format: 'latex' } : {}),
+      };
+    }
+    this.sync();
+  }
+
+  /**
    * Keep the text at a fixed world position when the leader target moves.
    * @param {object} item
    * @param {{ x: number, y: number }} targetPx
@@ -873,6 +1025,17 @@ export class LabelManager {
         visible: raw.visible !== false,
         fontSize: Number.isFinite(raw.fontSize) ? raw.fontSize : 13,
       };
+      if (raw.valueBinding && typeof raw.valueBinding === 'object') {
+        const body = raw.valueBinding.body ?? raw.valueBinding.object;
+        const property = raw.valueBinding.property;
+        if (typeof body === 'string' && body && typeof property === 'string' && property) {
+          item.valueBinding = {
+            body,
+            property,
+            ...(raw.valueBinding.format === 'latex' ? { format: 'latex' } : {}),
+          };
+        }
+      }
 
       const offsetM = {
         x: Number(raw.offset?.x) || 0,
@@ -937,6 +1100,13 @@ export class LabelManager {
       if (l.italic) entry.italic = true;
       if (l.visible === false) entry.visible = false;
       if (l.fontSize != null && l.fontSize !== 13) entry.fontSize = l.fontSize;
+      if (l.valueBinding?.body && l.valueBinding?.property) {
+        entry.valueBinding = {
+          body: l.valueBinding.body,
+          property: l.valueBinding.property,
+          ...(l.valueBinding.format === 'latex' ? { format: 'latex' } : {}),
+        };
+      }
 
       if (l.placement === 'callout') {
         if (l.targetAnchor) {
@@ -1126,7 +1296,7 @@ export class LabelManager {
       const textPos = this._resolveTextPos(item);
       if (!textPos) continue;
       if (dist(pt, textPos) <= HIT_PX + 4) return item;
-      if (item.placement === 'callout' || item.placement === 'standalone') {
+      if (item.placement === 'callout') {
         const target = this._resolveTarget(item);
         if (target && dist(pt, target) <= HANDLE_HIT_PX) return item;
         if (target && distToSeg(pt, textPos, target) <= HIT_PX) return item;
@@ -1153,7 +1323,7 @@ export class LabelManager {
    * @returns {'target'|'text'|null}
    */
   _hitPart(item, pt) {
-    if (item.placement === 'callout' || item.placement === 'standalone') {
+    if (item.placement === 'callout') {
       const target = this._resolveTarget(item);
       if (target && dist(pt, target) <= HANDLE_HIT_PX) return 'target';
     }
@@ -1227,7 +1397,7 @@ export class LabelManager {
       opacity: draft ? 0.65 : null,
       'pointer-events': 'none',
     });
-    setSvgMathLabel(t, item.text);
+    setSvgMathLabel(t, resolveLabelText(item, this.engine));
     g.appendChild(t);
   }
 
@@ -1245,7 +1415,7 @@ export class LabelManager {
         class: `scene-label scene-label-${item.placement}${selected ? ' selected' : ''}${showChrome ? '' : ' scene-label-hidden'}`,
       });
 
-      if (item.placement === 'callout' || item.placement === 'standalone') {
+      if (item.placement === 'callout') {
         const target = this._resolveTarget(item);
         if (showChrome) {
           // Keep leaders with the label (above bodies). The shared leaderLayer paints

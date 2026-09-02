@@ -16,7 +16,7 @@
  */
 
 import Matter from 'matter-js';
-import { applyQuadraticAirDrag } from '../physics/air-drag.js';
+import { applyQuadraticAirDrag, clearAirDragVisuals } from '../physics/air-drag.js';
 import {
   getForceArrowScale, setForceArrowScale,
   getVelocityArrowScale, setVelocityArrowScale,
@@ -115,6 +115,7 @@ export class EnvironmentPanel {
 
     el.airToggle.checked = environment.air?.enabled ?? false;
     this._airEnabled = environment.air?.enabled ?? false;
+    if (!this._airEnabled) clearAirDragVisuals(this.engine.bodies);
     if (environment.air) {
       el.dragCoefficient.value = environment.air.cd ?? DEFAULT_DRAG_COEFFICIENT;
       el.area.value = environment.air.area ?? DEFAULT_AREA_M2;
@@ -135,6 +136,7 @@ export class EnvironmentPanel {
 
     el.airToggle.addEventListener('change', () => {
       this._airEnabled = el.airToggle.checked;
+      if (!this._airEnabled) clearAirDragVisuals(this.engine.bodies);
       this._syncAirRowsUi();
     });
 

@@ -126,7 +126,7 @@ export class ScaleHandles {
     if (selection?.type === 'body') {
       const b = context.engine.bodies.find(x => x.id === selection.id);
       if (b?._newtonType === 'box') key = `box:${b.id}`;
-      else if (b?._newtonType === 'point-mass') key = `circle:${b.id}`;
+      else if (b?._newtonType === 'ball' || b?._newtonType === 'point' || b?._newtonType === 'point-mass') key = `circle:${b.id}`;
       else if (b?._newtonType === 'wedge') key = `wedge:${b.id}`;
     }
 

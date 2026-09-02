@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Ball rolling down a wedge (no slip)",
     "source": "demo",
@@ -69,7 +69,7 @@
     },
     {
       "id": "ball_1",
-      "type": "ball",
+      "type": "point",
       "position": {
         "x": 0.5873336095,
         "y": 0.2451106508

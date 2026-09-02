@@ -25,7 +25,8 @@
  */
 
 import Matter from 'matter-js';
-import { createPointMass, createBall, createBox, createWedge, createAnchor, createGround,
+import { attachCoreComponents } from '../components/optional-properties.js';
+import { createBall, createPoint, createBox, createWedge, createAnchor, createGround,
          createString, wedgeAABBCenterWorld, setWedgeAABBCenter, snapWedgeToGrid,
          wedgeContainsWorldPoint, anchorContainsWorldPoint } from '../physics/bodies.js';
 import { createRod, createSpring } from '../physics/constraints.js';
@@ -1222,14 +1223,14 @@ export class InteractionHandler {
   _canRotate(body) {
     if (body?._ropeSegment) return false;
     const t = body?._newtonType;
-    return t === 'box' || t === 'ground' || t === 'ball' || t === 'point-mass' || t === 'wedge' || t === 'anchor';
+    return t === 'box' || t === 'ground' || t === 'ball' || t === 'point' || t === 'point-mass' || t === 'wedge' || t === 'anchor';
   }
 
   /** Bodies resized by the scale tool. */
   _canScale(body) {
     if (body?._ropeSegment) return false;
     const t = body?._newtonType;
-    return t === 'box' || t === 'point-mass' || t === 'wedge';
+    return t === 'box' || t === 'ball' || t === 'point' || t === 'point-mass' || t === 'wedge';
   }
 
   /** Ghost overlay while rotating: radial guide + angle readout. */
@@ -1286,23 +1287,29 @@ export class InteractionHandler {
     this._ghostLayer.appendChild(txt);
   }
 
+  _placeBody(factory, pt) {
+    const body = factory(this._snap(pt.x), this._snap(pt.y));
+    attachCoreComponents(body);
+    this.engine.addBody(body);
+  }
+
   _handleClick(pt) {
     if (this._mode === 'pan' || this._mode === 'rotate' || this._mode === 'scale') return;
     switch (this._mode) {
       case 'ball':
-        this.engine.addBody(createBall(this._snap(pt.x), this._snap(pt.y)));
+        this._placeBody(createBall, pt);
         break;
-      case 'point-mass':
-        this.engine.addBody(createPointMass(this._snap(pt.x), this._snap(pt.y)));
+      case 'point':
+        this._placeBody(createPoint, pt);
         break;
       case 'box':
-        this.engine.addBody(createBox(this._snap(pt.x), this._snap(pt.y)));
+        this._placeBody(createBox, pt);
         break;
       case 'wedge':
-        this.engine.addBody(createWedge(this._snap(pt.x), this._snap(pt.y)));
+        this._placeBody(createWedge, pt);
         break;
       case 'anchor':
-        this.engine.addBody(createAnchor(this._snap(pt.x), this._snap(pt.y)));
+        this._placeBody(createAnchor, pt);
         break;
       case 'select': {
         const hit = this._bodyPartAt(pt);

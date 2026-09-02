@@ -1,7 +1,45 @@
 /** Unified Newton scene document format (export, import, reset). */
 
 export const SCENE_FORMAT = 'newton-scene';
-export const SCENE_VERSION = 1;
+export const SCENE_VERSION = 2;
+
+/** Scene / Matter body type for a hollow-capable circle (grey fill or ring). */
+export const BODY_TYPE_BALL = 'ball';
+/** Scene / Matter body type for a solid ink point mass. */
+export const BODY_TYPE_POINT = 'point';
+
+/**
+ * Map legacy `point-mass` scene type to `ball`.
+ * @param {string} type
+ * @returns {string}
+ */
+export function normalizeBodyType(type) {
+  if (type === 'point-mass') return BODY_TYPE_BALL;
+  return type;
+}
+
+/**
+ * Full v1 scene body-type migration (`point-mass` → ball, old `ball` → point).
+ * @param {string} type
+ * @returns {string}
+ */
+export function migrateLegacySceneBodyType(type) {
+  if (type === 'point-mass') return BODY_TYPE_BALL;
+  if (type === 'ball') return BODY_TYPE_POINT;
+  return type;
+}
+
+/**
+ * Resolve a recorder body snapshot type (handles pre-rename recordings).
+ * @param {{ type?: string, bodySnapFormat?: number }} snap
+ * @returns {string|undefined}
+ */
+export function normalizeRecorderBodyType(snap) {
+  const type = snap?.type;
+  if (!type) return type;
+  if ((snap.bodySnapFormat ?? 1) >= 2) return type;
+  return migrateLegacySceneBodyType(type);
+}
 
 /** @typedef {{ x: number, y: number }} Vec2M */
 /** @typedef {{ vx: number, vy: number }} Vel2MS */
@@ -23,13 +61,15 @@ export const SCENE_VERSION = 1;
  * @property {object[]} [measurements]  Length / angle overlays (see MeasurementManager).
  *   Lengths may set `component`: 'distance' | 'dx' | 'dy' | 'manhattan'.
  * @property {object[]} [labels]  Inline on bodies, callouts to world points or anchored targets.
+ *   Labels may set `valueBinding`: `{ body, property, format?: 'latex' }` and
+ *   use `{{value}}` in `text` for a live property readout.
  * @property {{ id: string, name: string, members: string[] }[]} [uiAggregates]
  */
 
 /**
  * @typedef {object} SceneBody
  * @property {string} id
- * @property {'point-mass'|'ball'|'box'|'wedge'|'ground'|'anchor'|'metric-basis'} type
+ * @property {'ball'|'point'|'box'|'wedge'|'ground'|'anchor'|'metric-basis'} type
  * @property {Vec2M} position
  * @property {number} [angle]
  * @property {Vel2MS} [velocity]
@@ -39,11 +79,15 @@ export const SCENE_VERSION = 1;
  * @property {object} [material]
  * @property {{ F: number, thetaDeg: number }} [appliedForce]  Constant pull (N, ° above +x); F may be 0 when drivenApplied
  * @property {boolean} [drivenApplied]  Body: time-varying applied F(t) along θ
- * @property {string} [drivenAppliedForce]  Body drive F(t) expression (N), e.g. `5*sin(2*pi*t)`
+ * @property {string} [drivenAppliedForce]  Body drive F(t) expression (N), e.g. `5sin(2pi t)`
+ * @property {string} [drivenAppliedFrequency]  Instantaneous drive frequency f(t) (Hz)
+ * @property {string} [drivenAppliedPhaseParameter]  Named parameter integrated for drive phase
+ * @property {Record<string, { expression: string, unit?: string, label?: string }>} [parameters]
+ *   Named time-dependent parameters used by this body's drive expression.
  * @property {number} [angularVelocity]  Display ω_z (rad/s): + CCW / out of screen
  * @property {number} [appliedTorque]  Display τ (N·m): + CCW / out of screen
  * @property {boolean} [driven]  Anchor: time-varying drive
- * @property {string} [drivenTorque]  Anchor drive τ(t) expression (N·m), e.g. `0.5*sin(2*pi*t)`
+ * @property {string} [drivenTorque]  Anchor drive τ(t) expression (N·m), e.g. `0.5sin(2pi t)`
  */
 
 /**

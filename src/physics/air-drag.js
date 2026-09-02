@@ -8,6 +8,16 @@ import { PX_PER_M, matterVelToPxPerSec } from '../units.js';
 const { Body } = Matter;
 
 /**
+ * Clear the last computed drag-force display vectors.
+ * @param {import('matter-js').Body[]} bodies
+ */
+export function clearAirDragVisuals(bodies) {
+  for (const b of bodies ?? []) {
+    if (b) b._airDragVis = null;
+  }
+}
+
+/**
  * @param {import('matter-js').Body[]} bodies
  * @param {{ rho: number, Cd: number, A: number }} params
  * @param {{ noteEnergyDissipation?: () => void }|null} [engine]
@@ -16,6 +26,7 @@ const { Body } = Matter;
 export function applyQuadraticAirDrag(bodies, params, engine = null) {
   const { rho, Cd, A } = params;
   let applied = false;
+  clearAirDragVisuals(bodies);
   for (const b of bodies) {
     if (!b || b.isStatic) continue;
     const { vxPps, vyPps } = matterVelToPxPerSec(b.velocity.x, b.velocity.y);
@@ -32,6 +43,10 @@ export function applyQuadraticAirDrag(bodies, params, engine = null) {
       x: -(vxMs / vMag) * Fmatter,
       y: -(vyMs / vMag) * Fmatter,
     });
+    b._airDragVis = {
+      fxN: -(vxMs / vMag) * FN,
+      fyN: -(vyMs / vMag) * FN,
+    };
     applied = true;
   }
   if (applied) engine?.noteEnergyDissipation?.();

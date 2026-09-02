@@ -35,8 +35,9 @@ import {
   wedgeAABBCenterWorld,
   wedgeTriangleWorldVerts,
   wedgeContainsWorldPoint,
+  groundVisualPosition,
 } from '../physics/bodies.js';
-import { constraintAnchorWorld } from '../physics/layout-anchors.js';
+import { constraintAnchorWorld, groundTopEdgeWorld } from '../physics/layout-anchors.js';
 import { COLORS, FONT_DIAGRAM } from '../theme.js';
 import { setSvgMathLabel } from '../math-text.js';
 import {
@@ -1351,24 +1352,11 @@ export class MeasurementManager {
         const aabb = wedgeAABBCenterWorld(b);
         consider(dist(pt, aabb), { kind: 'body', ...meta });
       } else if (b._newtonType === 'ground') {
-        const w = b._width ?? 400;
-        const h = b._height ?? 20;
-        const c = Math.cos(b.angle);
-        const s = Math.sin(b.angle);
-        // Top-edge ends (walking surface).
-        const hx = w / 2;
-        const hy = -h / 2;
-        const a = {
-          x: b.position.x + c * (-hx) - s * hy,
-          y: b.position.y + s * (-hx) + c * hy,
-        };
-        const e = {
-          x: b.position.x + c * hx - s * hy,
-          y: b.position.y + s * hx + c * hy,
-        };
-        consider(dist(pt, a), { kind: 'vertex', ...meta, vertex: 'groundA' });
-        consider(dist(pt, e), { kind: 'vertex', ...meta, vertex: 'groundB' });
-        consider(dist(pt, b.position), { kind: 'body', ...meta });
+        const { L, R } = groundTopEdgeWorld(b);
+        consider(dist(pt, L), { kind: 'vertex', ...meta, vertex: 'groundA' });
+        consider(dist(pt, R), { kind: 'vertex', ...meta, vertex: 'groundB' });
+        const vis = groundVisualPosition(b);
+        consider(dist(pt, vis), { kind: 'body', ...meta });
       } else {
         consider(dist(pt, b.position), { kind: 'body', ...meta });
       }
@@ -1538,17 +1526,8 @@ export class MeasurementManager {
         return verts[a.vertex] ?? null;
       }
       if (body._newtonType === 'ground') {
-        const w = body._width ?? 400;
-        const h = body._height ?? 20;
-        const c = Math.cos(body.angle);
-        const s = Math.sin(body.angle);
-        const hx = w / 2;
-        const hy = -h / 2;
-        const sign = a.vertex === 'groundB' ? 1 : -1;
-        return {
-          x: body.position.x + c * (sign * hx) - s * hy,
-          y: body.position.y + s * (sign * hx) + c * hy,
-        };
+        const { L, R } = groundTopEdgeWorld(body);
+        return a.vertex === 'groundB' ? R : L;
       }
     }
     return null;

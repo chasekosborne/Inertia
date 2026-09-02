@@ -83,7 +83,7 @@ export function buildInelasticDumbbellScene(opts = {}) {
     bodies: [
       {
         id: 'projectile',
-        type: 'point-mass',
+        type: 'ball',
         position: { x: projectileX, y: topY },
         angle: 0,
         mass: m,
@@ -96,7 +96,7 @@ export function buildInelasticDumbbellScene(opts = {}) {
       },
       {
         id: 'dumbbell_top',
-        type: 'point-mass',
+        type: 'ball',
         position: { x: 0, y: topY },
         angle: 0,
         mass: m,
@@ -109,7 +109,7 @@ export function buildInelasticDumbbellScene(opts = {}) {
       },
       {
         id: 'dumbbell_bottom',
-        type: 'point-mass',
+        type: 'ball',
         position: { x: 0, y: botY },
         angle: 0,
         mass: m,

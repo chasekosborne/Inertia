@@ -63,6 +63,7 @@ export const MATH_PLAIN = {
   Fsp: 'Fₛₚ',
   Fst: 'Fₛₜ',
   Fapp: 'Fₐₚₚ',
+  omega: 'ω',
   ptheta: 'p_θ',
   tau: 'τ',
   fk: 'fₖ',
@@ -159,15 +160,44 @@ export function formatMathLabelHtml(label) {
  * @param {SVGTextElement} textEl
  * @param {string} label
  */
+function normalizeSvgMath(s) {
+  return s
+    .replace(/\\(?:left|right)\b/g, '')
+    .replace(/\\(?:mathrm|text)\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\\(?:cdot|times|ast)\b/g, '·')
+    .replace(/\\pi\b/gi, 'π')
+    .replace(/\\(sin|cos|tan|asin|acos|atan|sqrt|exp|abs|floor|ceil|min|max|ln|log)\b/gi, '$1')
+    .replace(/\\(alpha|beta|gamma|delta|epsilon|theta|lambda|mu|rho|sigma|tau|phi|omega)\b/gi, (_, token) => resolveMathToken(token))
+    .replace(/\\(?:,|;|:|!|~)/g, '')
+    .replace(/[{}]/g, '');
+}
+
+/**
+ * Append a math-ish string, including common TeX commands and inline
+ * subscripts / superscripts, to an SVG text element.
+ */
 function appendSvgMathLabel(textEl, label) {
-  const { base, sub } = parseMathLabel(label);
-  textEl.appendChild(document.createTextNode(resolveMathToken(base)));
-  if (sub != null && sub !== '') {
+  const source = normalizeSvgMath(unwrapMathDelimiters(String(label ?? '')));
+  if (!source) return;
+
+  // Keep the old compact label behaviour while allowing a whole expression
+  // such as `F(t) = 2\cdot\sin(2\cdot\pi\cdot0.7\cdot t)`.
+  const token = /([_^])(?:\{([^}]*)\}|([A-Za-z0-9.+-]+))/g;
+  let cursor = 0;
+  let match;
+  while ((match = token.exec(source))) {
+    if (match.index > cursor) {
+      textEl.appendChild(document.createTextNode(resolveMathToken(source.slice(cursor, match.index))));
+    }
     const tspan = document.createElementNS(SVG_NS, 'tspan');
-    tspan.setAttribute('dy', '0.4em');
+    tspan.setAttribute('dy', match[1] === '_' ? '0.4em' : '-0.4em');
     tspan.setAttribute('font-size', '70%');
-    tspan.textContent = resolveMathToken(sub);
+    tspan.textContent = resolveMathToken(match[2] ?? match[3] ?? '');
     textEl.appendChild(tspan);
+    cursor = token.lastIndex;
+  }
+  if (cursor < source.length) {
+    textEl.appendChild(document.createTextNode(resolveMathToken(source.slice(cursor))));
   }
 }
 

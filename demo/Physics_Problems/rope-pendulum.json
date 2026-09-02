@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Pendulum on a rope constraint",
     "source": "demo",
@@ -38,7 +38,7 @@
     },
     {
       "id": "bob",
-      "type": "ball",
+      "type": "point",
       "position": {
         "x": 0.9192533317427736,
         "y": 0.7713451316238472
@@ -62,7 +62,7 @@
     },
     {
       "id": "rope_0",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0,
         "y": 0
@@ -98,7 +98,7 @@
     },
     {
       "id": "rope_1",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.1149066664678467,
         "y": 0.0964181414529809
@@ -129,7 +129,7 @@
     },
     {
       "id": "rope_2",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.2298133329356934,
         "y": 0.1928362829059618
@@ -160,7 +160,7 @@
     },
     {
       "id": "rope_3",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.3447199994035401,
         "y": 0.2892544243589427
@@ -191,7 +191,7 @@
     },
     {
       "id": "rope_4",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.4596266658713868,
         "y": 0.3856725658119236
@@ -222,7 +222,7 @@
     },
     {
       "id": "rope_5",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.5745333323392334,
         "y": 0.4820907072649045
@@ -253,7 +253,7 @@
     },
     {
       "id": "rope_6",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.6894399988070802,
         "y": 0.5785088487178854
@@ -284,7 +284,7 @@
     },
     {
       "id": "rope_7",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.8043466652749269,
         "y": 0.6749269901708663
@@ -315,7 +315,7 @@
     },
     {
       "id": "rope_8",
-      "type": "point-mass",
+      "type": "ball",
       "position": {
         "x": 0.9192533317427736,
         "y": 0.7713451316238472

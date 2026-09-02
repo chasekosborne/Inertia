@@ -1,42 +1,75 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Two-dimensional projectile motion",
     "source": "demo",
     "demoId": "projectile-motion-2d",
     "description": "Point mass m = 1 kg launched from the origin with |v₀| = 8 m/s at θ = 60° above the horizontal. Very rough ground (high friction, no bounce) so it stops where it lands. No air. Ideal range R = v₀² sin(2θ)/g ≈ 5.65 m; apex H = (v₀ sin θ)²/(2g) ≈ 2.45 m. An invisible launch label anchors dynamic x and y measurements."
   },
-  "metricOrigin": { "x": 0, "y": 0 },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
   "environment": {
-    "gravity": { "enabled": true, "g": 9.81 },
-    "air": { "enabled": false, "cd": 0.47, "area": 0.045, "rho": 1.225 }
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
   },
   "camera": {
-    "center": { "x": 2.8, "y": -1.3 },
-    "view": { "width": 8, "height": 5 }
+    "center": {
+      "x": 2.8,
+      "y": -1.3
+    },
+    "view": {
+      "width": 8,
+      "height": 5
+    }
   },
   "bodies": [
     {
       "id": "ground_1",
       "type": "ground",
-      "position": { "x": 3.5, "y": 0.1 },
+      "position": {
+        "x": 3.5,
+        "y": 0.1
+      },
       "angle": 0,
-      "geometry": { "width": 8, "height": 0.2 },
-      "material": { "restitution": 0, "muK": 10, "muS": 10, "frictionAir": 0 }
+      "geometry": {
+        "width": 8,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 10,
+        "muS": 10,
+        "frictionAir": 0
+      }
     },
     {
       "id": "point",
-      "type": "point-mass",
+      "type": "ball",
       "label": "point",
-      "position": { "x": 0, "y": -0.08 },
+      "position": {
+        "x": 0,
+        "y": -0.08
+      },
       "angle": 0,
       "mass": 1,
       "velocity": {
         "vx": 4,
         "vy": 6.928203230275509
       },
-      "geometry": { "radius": 0.08 },
+      "geometry": {
+        "radius": 0.08
+      },
       "material": {
         "restitution": 0,
         "muK": 10,
@@ -52,8 +85,14 @@
       "id": "launch",
       "text": "O",
       "visible": false,
-      "point": { "x": 0, "y": -0.08 },
-      "offset": { "x": 0, "y": 0 }
+      "point": {
+        "x": 0,
+        "y": -0.08
+      },
+      "offset": {
+        "x": 0,
+        "y": 0
+      }
     }
   ],
   "measurements": [
@@ -64,8 +103,14 @@
       "dynamic": true,
       "component": "dx",
       "signed": true,
-      "a": { "kind": "label", "label": "launch" },
-      "b": { "kind": "body", "body": "point" }
+      "a": {
+        "kind": "label",
+        "label": "launch"
+      },
+      "b": {
+        "kind": "body",
+        "body": "point"
+      }
     },
     {
       "id": "y_pos",
@@ -74,8 +119,14 @@
       "dynamic": true,
       "component": "dy",
       "signed": true,
-      "a": { "kind": "label", "label": "launch" },
-      "b": { "kind": "body", "body": "point" }
+      "a": {
+        "kind": "label",
+        "label": "launch"
+      },
+      "b": {
+        "kind": "body",
+        "body": "point"
+      }
     }
   ]
 }

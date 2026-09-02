@@ -16,11 +16,13 @@ const { Body } = Matter;
 
 /** Body types that support applied / driven F. */
 export const APPLIED_FORCE_BODY_TYPES = new Set([
-  'point-mass', 'ball', 'box', 'wedge',
+  'ball', 'point', 'box', 'wedge',
 ]);
 
 /** Default drive: gentle sinusoidal force (N). */
-export const DEFAULT_DRIVEN_APPLIED_FORCE_EXPR = '5*sin(2*pi*t)';
+export const DEFAULT_DRIVEN_APPLIED_FORCE_EXPR = '5sin(2pi t)';
+/** Default driven frequency (Hz), used for live angular-frequency readouts. */
+export const DEFAULT_DRIVEN_APPLIED_FREQUENCY_EXPR = '1';
 
 /** 1 N = 1 kg·m/s² → Matter kg·px/ms² (same as air-drag / springs). */
 export function newtonsToMatterForce(FN) {
@@ -154,6 +156,10 @@ export function setDrivenAppliedForce(body, driven) {
   if (!body._drivenApplied) {
     body._drivenAppliedFn = null;
     body._drivenAppliedError = null;
+    body._drivenAppliedFrequencyFn = null;
+    body._drivenAppliedFrequencyError = null;
+    body._drivenAppliedLastOmega = null;
+    body._drivenAppliedPhaseParameter = null;
     // Drop zero-magnitude placeholder if no constant F remains.
     const af = body._appliedForce;
     if (af && !(Number(af.F) > 0)) body._appliedForce = null;
@@ -167,6 +173,135 @@ export function setDrivenAppliedForce(body, driven) {
   } else {
     setDrivenAppliedForceExpr(body, body._drivenAppliedExpr);
   }
+  if (!body._drivenAppliedFrequencyExpr) {
+    setDrivenAppliedFrequencyExpr(body, DEFAULT_DRIVEN_APPLIED_FREQUENCY_EXPR);
+  } else {
+    setDrivenAppliedFrequencyExpr(body, body._drivenAppliedFrequencyExpr);
+  }
+}
+
+/**
+ * Compile named time-dependent parameters for a driven force.
+ *
+ * Definitions may be `{ omega: { expression: '2pi*(0.4 + 0.01t)' } }`.
+ * Parameter expressions can reference other named parameters.
+ *
+ * @param {import('matter-js').Body} body
+ * @param {object|null|undefined} definitions
+ * @returns {{ ok: true }|{ ok: false, error: string }}
+ */
+export function setDrivenAppliedParameters(body, definitions) {
+  if (!supportsAppliedForce(body)) return { ok: false, error: 'Not a forceable body' };
+  const source = definitions && typeof definitions === 'object' ? definitions : {};
+  const names = Object.keys(source)
+    .filter(name => /^[a-zA-Z][a-zA-Z0-9_]*$/.test(name))
+    .map(name => name.toLowerCase());
+  const allowed = new Set(names);
+  /** @type {Record<string, object>} */
+  const normalized = {};
+  /** @type {Record<string, object>} */
+  const compiled = {};
+
+  for (const rawName of Object.keys(source)) {
+    const name = rawName.toLowerCase();
+    if (!allowed.has(name)) continue;
+    const raw = source[rawName];
+    const definition = typeof raw === 'string' ? { expression: raw } : (raw ?? {});
+    const expression = String(definition.expression ?? definition.expr ?? '').trim();
+    if (!expression) return { ok: false, error: `Parameter "${rawName}" has an empty expression` };
+    const result = compileExpr(expression, { variables: allowed });
+    if (!result.ok) return { ok: false, error: `Parameter "${rawName}": ${result.error}` };
+    normalized[name] = {
+      expression: result.source,
+      ...(typeof definition.label === 'string' ? { label: definition.label } : {}),
+      ...(typeof definition.unit === 'string' ? { unit: definition.unit } : {}),
+    };
+    compiled[name] = {
+      eval: result.eval,
+      dependencies: names.filter(other => other !== name
+        && new RegExp(`\\b${other}\\b`, 'i').test(expression)),
+    };
+  }
+
+  body._drivenAppliedParameters = normalized;
+  body._drivenAppliedParameterFns = compiled;
+  body._drivenAppliedParameterError = null;
+  if (body._drivenAppliedExpr) {
+    setDrivenAppliedForceExpr(body, body._drivenAppliedExpr);
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {import('matter-js').Body|null|undefined} body
+ * @returns {object}
+ */
+export function getDrivenAppliedParameters(body) {
+  return body?._drivenAppliedParameters && typeof body._drivenAppliedParameters === 'object'
+    ? body._drivenAppliedParameters
+    : {};
+}
+
+/**
+ * Set the named parameter whose integral supplies the force phase.
+ * @param {import('matter-js').Body} body
+ * @param {string|null|undefined} name
+ */
+export function setDrivenAppliedPhaseParameter(body, name) {
+  body._drivenAppliedPhaseParameter = typeof name === 'string' && name.trim()
+    ? name.trim().toLowerCase()
+    : null;
+  if (body._drivenAppliedExpr) setDrivenAppliedForceExpr(body, body._drivenAppliedExpr);
+}
+
+/**
+ * @param {import('matter-js').Body} body
+ * @param {number} t
+ * @returns {Record<string, number>}
+ */
+export function evaluateDrivenAppliedParameters(body, t) {
+  const fns = body._drivenAppliedParameterFns ?? {};
+  const values = {};
+  const active = new Set();
+  const evaluate = (name) => {
+    if (Object.prototype.hasOwnProperty.call(values, name)) return values[name];
+    if (active.has(name)) return NaN;
+    const entry = fns[name];
+    if (!entry) return NaN;
+    active.add(name);
+    const dependencies = entry.dependencies ?? [];
+    const dependencyValues = {};
+    for (const dependency of dependencies) {
+      dependencyValues[dependency] = evaluate(dependency);
+    }
+    const value = entry.eval({ t, ...dependencyValues });
+    active.delete(name);
+    values[name] = Number.isFinite(value) ? value : NaN;
+    return values[name];
+  };
+  for (const name of Object.keys(fns)) evaluate(name);
+  return values;
+}
+
+/**
+ * Numerically integrate a named parameter from zero to t. This is used only
+ * for phase parameters, so `sin(omega t)` has the correct instantaneous ω.
+ * @param {import('matter-js').Body} body
+ * @param {string} name
+ * @param {number} t
+ */
+function integrateDrivenAppliedParameter(body, name, t) {
+  if (!Number.isFinite(t) || t === 0) return 0;
+  const steps = 64;
+  const h = t / steps;
+  let sum = 0;
+  for (let i = 0; i <= steps; i++) {
+    const ti = i * h;
+    const value = evaluateDrivenAppliedParameters(body, ti)[name];
+    if (!Number.isFinite(value)) return null;
+    sum += value * (i === 0 || i === steps ? 0.5 : 1);
+  }
+  return sum * h;
 }
 
 /**
@@ -176,6 +311,17 @@ export function setDrivenAppliedForce(body, driven) {
 export function getDrivenAppliedForceExpr(body) {
   if (!supportsAppliedForce(body)) return '';
   return typeof body._drivenAppliedExpr === 'string' ? body._drivenAppliedExpr : '';
+}
+
+/**
+ * @param {import('matter-js').Body|null|undefined} body
+ * @returns {string}
+ */
+export function getDrivenAppliedFrequencyExpr(body) {
+  if (!supportsAppliedForce(body)) return '';
+  return typeof body._drivenAppliedFrequencyExpr === 'string'
+    ? body._drivenAppliedFrequencyExpr
+    : '';
 }
 
 /**
@@ -193,7 +339,9 @@ export function setDrivenAppliedForceExpr(body, expr) {
     body._drivenAppliedError = 'Empty expression';
     return { ok: false, error: 'Empty expression' };
   }
-  const compiled = compileExpr(src);
+  const compiled = compileExpr(src, {
+    variables: Object.keys(body._drivenAppliedParameters ?? {}),
+  });
   if (!compiled.ok) {
     body._drivenAppliedExpr = src;
     body._drivenAppliedFn = null;
@@ -203,6 +351,34 @@ export function setDrivenAppliedForceExpr(body, expr) {
   body._drivenAppliedExpr = compiled.source;
   body._drivenAppliedFn = compiled.eval;
   body._drivenAppliedError = null;
+  return { ok: true, source: compiled.source };
+}
+
+/**
+ * Compile and store instantaneous drive frequency f(t), in Hz.
+ * @param {import('matter-js').Body} body
+ * @param {string} expr
+ * @returns {{ ok: true, source: string }|{ ok: false, error: string }}
+ */
+export function setDrivenAppliedFrequencyExpr(body, expr) {
+  if (!supportsAppliedForce(body)) return { ok: false, error: 'Not a forceable body' };
+  const src = String(expr ?? '').trim();
+  if (!src) {
+    body._drivenAppliedFrequencyExpr = '';
+    body._drivenAppliedFrequencyFn = null;
+    body._drivenAppliedFrequencyError = 'Empty expression';
+    return { ok: false, error: 'Empty expression' };
+  }
+  const compiled = compileExpr(src);
+  if (!compiled.ok) {
+    body._drivenAppliedFrequencyExpr = src;
+    body._drivenAppliedFrequencyFn = null;
+    body._drivenAppliedFrequencyError = compiled.error;
+    return compiled;
+  }
+  body._drivenAppliedFrequencyExpr = compiled.source;
+  body._drivenAppliedFrequencyFn = compiled.eval;
+  body._drivenAppliedFrequencyError = null;
   return { ok: true, source: compiled.source };
 }
 
@@ -223,8 +399,54 @@ export function evaluateDrivenAppliedForce(body, t) {
   if (!isDrivenAppliedForce(body)) return null;
   const fn = body._drivenAppliedFn;
   if (typeof fn !== 'function') return null;
-  const v = fn({ t });
+  // Keep the authored instantaneous parameter values separate from the
+  // phase value substituted into this one force evaluation.
+  const parameters = evaluateDrivenAppliedParameters(body, t);
+  const phaseParameter = body._drivenAppliedPhaseParameter;
+  if (phaseParameter && Object.prototype.hasOwnProperty.call(parameters, phaseParameter)) {
+    const phase = integrateDrivenAppliedParameter(body, phaseParameter, t);
+    if (phase == null) return null;
+    parameters[phaseParameter] = t === 0 ? 0 : phase / t;
+  }
+  const v = fn({ t, ...parameters });
   return isFinite(v) ? v : null;
+}
+
+/**
+ * Evaluate instantaneous driven frequency f(t) in Hz, or null.
+ * @param {import('matter-js').Body} body
+ * @param {number} t  sim time (s)
+ */
+export function evaluateDrivenAppliedFrequency(body, t) {
+  if (!isDrivenAppliedForce(body)) return null;
+  const phaseParameter = body._drivenAppliedPhaseParameter;
+  if (phaseParameter && body._drivenAppliedParameterFns?.[phaseParameter]) {
+    const parameters = evaluateDrivenAppliedParameters(body, t);
+    const omega = parameters[phaseParameter];
+    return isFinite(omega) ? omega / (2 * Math.PI) : null;
+  }
+  const fn = body._drivenAppliedFrequencyFn;
+  if (typeof fn !== 'function') return null;
+  const v = fn({ t, ...evaluateDrivenAppliedParameters(body, t) });
+  return isFinite(v) ? v : null;
+}
+
+/**
+ * Evaluate instantaneous angular frequency ω(t) in rad/s, or null.
+ * @param {import('matter-js').Body} body
+ * @param {number} t  sim time (s)
+ */
+export function evaluateDrivenAppliedOmega(body, t) {
+  const phaseParameter = body?._drivenAppliedPhaseParameter;
+  if (phaseParameter && body?._drivenAppliedParameterFns?.[phaseParameter]) {
+    // UI readouts use the authored instantaneous value. Only force evaluation
+    // above replaces the local parameter with its time average for sin(...).
+    const parameters = evaluateDrivenAppliedParameters(body, t);
+    const omega = parameters[phaseParameter];
+    return isFinite(omega) ? omega : null;
+  }
+  const f = evaluateDrivenAppliedFrequency(body, t);
+  return f == null ? null : 2 * Math.PI * f;
 }
 
 /**
@@ -242,6 +464,7 @@ export function solveDrivenAppliedForces(engine) {
     }
     const F = evaluateDrivenAppliedForce(b, t);
     b._drivenAppliedLastF = F;
+    b._drivenAppliedLastOmega = evaluateDrivenAppliedOmega(b, t);
     if (F == null || F === 0) continue;
     const thetaDeg = getAppliedForceDirection(b);
     const { fx, fy } = appliedForceToMatter(F, thetaDeg);

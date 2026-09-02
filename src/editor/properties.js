@@ -9,6 +9,7 @@
 import Matter from 'matter-js';
 import {
   setMaterialFriction, createGround, scaleBoxTo, scaleCircleTo, scaleWedgeTo, setWedgeGeometry,
+  groundVisualPosition,
   defaultWedgeFootAngle, clampWedgeFootAngle, wedgeAABBCenterWorld, setWedgeAABBCenter,
   snapWedgeToGrid,
   setBodyAnchored, setBodyMass, bodyDisplayMass, applyCircleInertia,
@@ -21,6 +22,8 @@ import {
   isDrivenAppliedForce,
   setDrivenAppliedForce,
   getDrivenAppliedForceExpr,
+  getDrivenAppliedParameters,
+  setDrivenAppliedParameters,
   setDrivenAppliedForceExpr,
   getDrivenAppliedForceError,
   DEFAULT_DRIVEN_APPLIED_FORCE_EXPR,
@@ -61,10 +64,34 @@ import {
 } from '../units.js';
 import { MATH } from '../math-text.js';
 import { mountMathExprInput, syncMathExprInput } from './math-expr-input.js';
+import { ensureEntity } from '../components/entity.js';
+import { getInspectorFields } from '../components/registry.js';
+import {
+  mountInspector,
+  refreshInspectorFields,
+  annotatePropertySections,
+} from '../components/inspector.js';
+import {
+  attachProperty,
+  detachProperty,
+  canDetachProperty,
+} from '../components/optional-properties.js';
 
 const { Body } = Matter;
 
 export { PX_PER_M };
+
+const LABEL_VALUE_PROPERTIES = [
+  ['drivenAppliedForce', 'Drive F(t) formula'],
+  ['drivenAppliedFrequency', 'Drive frequency f(t)'],
+  ['drivenAppliedOmega', 'Drive angular frequency ω(t)'],
+  ['appliedForce.F', '|F|'],
+  ['appliedForce.thetaDeg', 'Force angle θ'],
+  ['mass', 'Mass'],
+  ['velocity.x', 'Velocity x'],
+  ['velocity.y', 'Velocity y'],
+  ['angle', 'Angle'],
+];
 
 export class PropertiesPanel {
   /**
@@ -90,6 +117,8 @@ export class PropertiesPanel {
     this._getSnapEnabled = getSnapEnabled;
     this._measurementHooks = measurementHooks;
     this._pushArmed = false;
+    /** @type {(() => void)|null} */
+    this._componentInspectorRefresh = null;
 
     // Enter commits the focused property field.
     this.panel.addEventListener('keydown', e => {
@@ -214,8 +243,8 @@ export class PropertiesPanel {
 
   /** Human label for a welded component type. */
   _partTypeLabel(type) {
-    if (type === 'point-mass') return 'Point';
-    if (type === 'ball') return 'Ball';
+    if (type === 'point-mass' || type === 'ball') return 'Ball';
+    if (type === 'point') return 'Point';
     if (type === 'box') return 'Box';
     if (type === 'wedge') return 'Wedge';
     return type || 'Part';
@@ -296,12 +325,14 @@ export class PropertiesPanel {
       constRows?.classList.toggle('hidden', on);
       if (on) {
         requestAnimationFrame(() => this._bindDrivenAppliedExprInput(b));
+        requestAnimationFrame(() => this._bindDrivenParameterInputs(b));
       }
       this.engine.invalidateEnergyTarget?.();
     });
 
     const b0 = readBody();
     if (b0 && isDrivenAppliedForce(b0)) this._bindDrivenAppliedExprInput(b0);
+    if (b0) this._bindDrivenParameterInputs(b0);
   }
 
   applyVelocity(body, vxPx, vyPx, { snapGrid } = {}) {
@@ -333,8 +364,25 @@ export class PropertiesPanel {
     const Fy = F * Math.sin(rad);
     const expr = getDrivenAppliedForceExpr(body) || DEFAULT_DRIVEN_APPLIED_FORCE_EXPR;
     const err = getDrivenAppliedForceError(body);
+    const parameters = Object.entries(body._drivenAppliedParameters ?? {});
+    const parameterSection = parameters.length
+      ? `
+        <div class="prop-section-title" style="margin-top:12px">Parameters</div>
+        ${parameters.map(([name, definition]) => `
+          <div class="prop-parameter-row">
+            <div class="prop-label">${_escapeHtml(definition.label || name)}${definition.unit ? ` <span class="prop-parameter-unit">(${_escapeHtml(definition.unit)})</span>` : ''}</div>
+            <div class="prop-math-expr-wrap prop-driven-parameter-wrap"
+              id="prop-driven-parameter-${name}"
+              data-expr="${_escapeHtml(definition.expression)}"></div>
+            <p class="prop-expr-error hidden" id="prop-driven-parameter-${name}-err"></p>
+          </div>
+        `).join('')}`
+      : '';
     return `
-      <div class="prop-section-title" style="margin-top:8px">Applied force ${MATH.F}</div>
+      <div class="prop-section-title prop-optional-header" style="margin-top:8px">
+        <span>Applied force ${MATH.F}</span>
+        <button type="button" class="prop-optional-remove" data-detach="appliedForce">Remove</button>
+      </div>
       <div class="prop-row">
         <span class="prop-label">Driven</span>
         <label class="toggle-label">
@@ -348,6 +396,7 @@ export class PropertiesPanel {
           data-expr="${_escapeHtml(expr)}"></div>
         <p class="prop-expr-error ${err ? '' : 'hidden'}" id="prop-driven-F-applied-err">${err ? _escapeHtml(err) : ''}</p>
       </div>
+      ${parameterSection}
       <div class="prop-row">
         <span class="prop-label">${MATH.theta} (°)</span>
         <input class="prop-value" id="prop-F-theta" type="number" step="1" min="-180" max="180" value="${thetaDeg.toFixed(1)}"/>
@@ -403,7 +452,25 @@ export class PropertiesPanel {
           errEl.textContent = '';
           errEl.classList.add('hidden');
         } else {
-          errEl.textContent = result.error ?? 'Invalid expression';
+          const unknown = /Unknown identifier "([a-zA-Z_][a-zA-Z0-9_]*)"/.exec(result.error ?? '');
+          if (unknown) {
+            const name = unknown[1].toLowerCase();
+            errEl.innerHTML = `${_escapeHtml(result.error)} <button type="button" class="prop-action-btn prop-add-parameter" data-parameter-name="${name}">Add parameter “${_escapeHtml(name)}”</button>`;
+            errEl.querySelector('.prop-add-parameter')?.addEventListener('click', () => {
+              const definitions = Object.fromEntries(Object.entries(getDrivenAppliedParameters(body))
+                .map(([key, value]) => [key, { ...value }]));
+              if (!definitions[name]) definitions[name] = { expression: '1' };
+              const added = setDrivenAppliedParameters(body, definitions);
+              if (added.ok) {
+                this._showBody(body);
+                this.engine.invalidateEnergyTarget?.();
+              } else {
+                errEl.textContent = added.error ?? 'Could not add parameter';
+              }
+            });
+          } else {
+            errEl.textContent = result.error ?? 'Invalid expression';
+          }
           errEl.classList.remove('hidden');
         }
       }
@@ -418,10 +485,44 @@ export class PropertiesPanel {
   }
 
   /**
+   * Bind each named body parameter as an editable MathLive expression.
+   * @param {import('matter-js').Body} body
+   */
+  _bindDrivenParameterInputs(body) {
+    const parameters = getDrivenAppliedParameters(body);
+    for (const [name, definition] of Object.entries(parameters)) {
+      const wrap = this.panel.querySelector(`#prop-driven-parameter-${name}`);
+      if (!wrap || wrap.dataset.bound === '1') continue;
+      const errorEl = this.panel.querySelector(`#prop-driven-parameter-${name}-err`);
+      mountMathExprInput(wrap, {
+        expr: definition.expression,
+        fallbackExpr: definition.expression,
+        onApply: (ascii) => {
+          this._push();
+          const next = Object.fromEntries(Object.entries(getDrivenAppliedParameters(body))
+            .map(([key, value]) => [key, { ...value }]));
+          if (!next[name]) return;
+          next[name].expression = ascii || definition.expression;
+          const result = setDrivenAppliedParameters(body, next);
+          if (result.ok) {
+            syncMathExprInput(wrap, next[name].expression);
+            errorEl?.classList.add('hidden');
+            if (errorEl) errorEl.textContent = '';
+          } else if (errorEl) {
+            errorEl.textContent = result.error ?? 'Invalid expression';
+            errorEl.classList.remove('hidden');
+          }
+          this.engine.invalidateEnergyTarget?.();
+        },
+      });
+    }
+  }
+
+  /**
    * Angular velocity ω, angular momentum L, and applied torque τ.
    * Sign: + = CCW / out of screen (⊙), − = CW / into screen (⊗).
    */
-  _angularRowsHtml(body) {
+  _angularRowsHtml(body, { showTorque = false } = {}) {
     const locked = body.inertia === Infinity || body._lockRotation === true;
     if (locked) {
       return `
@@ -432,6 +533,11 @@ export class PropertiesPanel {
     const L = bodyAngularMomentumSI(body);
     const tau = getAppliedTorque(body) ?? 0;
     const Lstr = L == null || !isFinite(L) ? '—' : L.toFixed(4);
+    const tauRow = showTorque ? `
+      <div class="prop-row">
+        <span class="prop-label">${MATH.tau} (N·m)</span>
+        <input class="prop-value" id="prop-tau" type="number" step="0.05" value="${tau.toFixed(3)}"/>
+      </div>` : '';
     return `
       <div class="prop-section-title" style="margin-top:8px">Rotation</div>
       <div class="prop-row">
@@ -441,11 +547,7 @@ export class PropertiesPanel {
       <div class="prop-row">
         <span class="prop-label">${MATH.L} (kg·m²/s)</span>
         <span class="prop-value" id="prop-L" style="opacity:0.85">${Lstr}</span>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.tau} (N·m)</span>
-        <input class="prop-value" id="prop-tau" type="number" step="0.05" value="${tau.toFixed(3)}"/>
-      </div>`;
+      </div>${tauRow}`;
   }
 
   _bindAngularInputs(newtonType) {
@@ -500,6 +602,21 @@ export class PropertiesPanel {
     }
     if (type === 'label') {
       this._buildLabelPanel(id);
+      return;
+    }
+    if (type === 'parameter') {
+      const body = this.engine.bodies.find(b => b.id === selection.bodyId);
+      if (!body) { this.clear(); return; }
+      this._showBody(body);
+      this._current.parameterName = selection.parameterName;
+      requestAnimationFrame(() => {
+        const wrap = this.panel.querySelector(
+          `#prop-driven-parameter-${selection.parameterName}`,
+        );
+        const field = wrap?.querySelector('math-field');
+        field?.scrollIntoView({ block: 'nearest' });
+        field?.focus();
+      });
       return;
     }
     if (type === 'aggregate') {
@@ -766,7 +883,9 @@ export class PropertiesPanel {
     if (!l) { this.clear(); return; }
 
     this._current = { type: 'label', id: l.id };
-    const attachMode = l.placement === 'inline'
+    const attachMode = l.placement === 'standalone'
+      ? 'standalone'
+      : l.placement === 'inline'
       ? 'inline'
       : l.targetAnchor
         ? 'callout-target'
@@ -778,6 +897,16 @@ export class PropertiesPanel {
           : 'Callout · world point')
         : 'Standalone';
     const hostLabel = mgr.hostBodyLabel?.(l);
+    const binding = l.valueBinding ?? {};
+    const boundBody = typeof binding.body === 'string' ? binding.body : '';
+    const boundProperty = typeof binding.property === 'string' ? binding.property : '';
+    const valueBodies = this.engine.bodies
+      .filter(b => b._newtonType !== 'metric-basis' && typeof b.label === 'string' && b.label)
+      .map(b => `<option value="${_escapeAttr(b.label)}" ${b.label === boundBody ? 'selected' : ''}>${_escapeHtml(b.label)}</option>`)
+      .join('');
+    const valueProperties = LABEL_VALUE_PROPERTIES
+      .map(([value, label]) => `<option value="${value}" ${value === boundProperty ? 'selected' : ''}>${label}</option>`)
+      .join('');
 
     let anchorRows = '';
     if (l.placement === 'inline') {
@@ -827,7 +956,20 @@ export class PropertiesPanel {
       <div class="prop-row">
         <span class="prop-label">Text</span>
         <input class="prop-value" id="prop-label-text" type="text" value="${_escapeHtml(l.text)}"
-          placeholder="theta_0, \\theta_{0}, $x$" title="LaTeX-style math: theta_0, \\omega, Greek names"/>
+          placeholder="F(t) = {{value}}" title="Use {{value}} for the selected property; LaTeX-style math is supported"/>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Value from</span>
+        <select class="prop-value" id="prop-label-value-body">
+          <option value="" ${boundBody ? '' : 'selected'}>None</option>
+          ${valueBodies}
+        </select>
+      </div>
+      <div class="prop-row">
+        <span class="prop-label">Property</span>
+        <select class="prop-value" id="prop-label-value-property" ${boundBody ? '' : 'disabled'}>
+          ${valueProperties}
+        </select>
       </div>
       <div class="prop-row">
         <span class="prop-label">Font size (px)</span>
@@ -846,6 +988,7 @@ export class PropertiesPanel {
           <option value="inline" ${attachMode === 'inline' ? 'selected' : ''}>Inside object</option>
           <option value="callout-target" ${attachMode === 'callout-target' ? 'selected' : ''}>Point to object</option>
           <option value="callout-world" ${attachMode === 'callout-world' ? 'selected' : ''}>Point to world</option>
+          <option value="standalone" ${attachMode === 'standalone' ? 'selected' : ''}>Free text</option>
         </select>
       </div>
       <div class="prop-row">
@@ -869,6 +1012,34 @@ export class PropertiesPanel {
     this.panel.querySelector('#prop-label-text')?.addEventListener('change', e => {
       this._push();
       mgr.setText(l.id, e.target.value);
+      this._measurementHooks?.onChanged?.();
+      this.show({ type: 'label', id: l.id });
+    });
+
+    this.panel.querySelector('#prop-label-value-body')?.addEventListener('change', e => {
+      this._push();
+      const body = e.target.value;
+      const property = this.panel.querySelector('#prop-label-value-property')?.value
+        || 'drivenAppliedForce';
+      mgr.setValueBinding(l.id, body ? {
+        body,
+        property,
+        ...(property === 'drivenAppliedForce' ? { format: 'latex' } : {}),
+      } : null);
+      this._measurementHooks?.onChanged?.();
+      this.show({ type: 'label', id: l.id });
+    });
+
+    this.panel.querySelector('#prop-label-value-property')?.addEventListener('change', e => {
+      const body = this.panel.querySelector('#prop-label-value-body')?.value;
+      if (!body) return;
+      this._push();
+      const property = e.target.value;
+      mgr.setValueBinding(l.id, {
+        body,
+        property,
+        ...(property === 'drivenAppliedForce' ? { format: 'latex' } : {}),
+      });
       this._measurementHooks?.onChanged?.();
       this.show({ type: 'label', id: l.id });
     });
@@ -1068,6 +1239,7 @@ export class PropertiesPanel {
   }
 
   _showBody(body) {
+    this._componentInspectorRefresh = null;
     if (body._ropeSegment && body._ropeId) {
       this._buildRopePanel(body._ropeId);
       return;
@@ -1079,19 +1251,29 @@ export class PropertiesPanel {
     };
     const nt = body._newtonType;
     if (nt === 'metric-basis') this._buildMetricBasisPanel(body);
-    else if (nt === 'point-mass') this._buildRoundBodyPanel(body, {
-      title: 'Point',
-      defaultRadiusM: DEFAULT_CIRCLE_RADIUS_M,
-      showHollow: true,
-    });
-    else if (nt === 'ball') this._buildRoundBodyPanel(body, {
+    else if (nt === 'ball' || nt === 'point-mass') this._buildComponentBodyPanel(body, {
       title: 'Ball',
-      defaultRadiusM: DEFAULT_BALL_RADIUS_M,
+      shapeKind: 'circle',
+      showHollow: true,
+      newtonType: 'ball',
+    });
+    else if (nt === 'point') this._buildComponentBodyPanel(body, {
+      title: 'Point',
+      shapeKind: 'circle',
       showHollow: false,
+      newtonType: 'point',
     });
     else if (nt === 'ground') this._buildGroundPanel(body);
-    else if (nt === 'box') this._buildBoxPanel(body);
-    else if (nt === 'wedge') this._buildWedgePanel(body);
+    else if (nt === 'box') this._buildComponentBodyPanel(body, {
+      title: 'Box',
+      shapeKind: 'box',
+      newtonType: 'box',
+    });
+    else if (nt === 'wedge') this._buildComponentBodyPanel(body, {
+      title: 'Wedge',
+      shapeKind: 'wedge',
+      newtonType: 'wedge',
+    });
     else if (nt === 'compound') this._buildCompoundPanel(body);
     else if (nt === 'anchor') this._buildAnchorPanel(body);
     else this._buildGenericPanel(body);
@@ -1213,7 +1395,7 @@ export class PropertiesPanel {
           <span class="prop-label">height (m)</span>
           <input class="prop-value" id="prop-part-h" type="number" step="0.01" min="0.05" value="${hM}"/>
         </div>`;
-    } else if (type === 'point-mass' || type === 'ball') {
+    } else if (type === 'ball' || type === 'point' || type === 'point-mass') {
       const rM = pxToM(meta.radius ?? 10).toFixed(3);
       geomRows = `
         <div class="prop-row">
@@ -1511,7 +1693,7 @@ export class PropertiesPanel {
   /** Keep position / layout readouts in sync while the sim runs (skip focused inputs). */
   _rebuildPositionInputs(body) {
     const nt = body._newtonType;
-    if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge' || nt === 'anchor') {
+    if (nt === 'ball' || nt === 'point' || nt === 'point-mass' || nt === 'box' || nt === 'wedge' || nt === 'anchor') {
       const origin = nt === 'wedge' ? wedgeAABBCenterWorld(body) : body.position;
       const { xm, ym } = worldPxToDisplayedM(origin.x, origin.y);
       this._setVField('#prop-x', xm.toFixed(2));
@@ -1572,7 +1754,8 @@ export class PropertiesPanel {
   _buildGroundPanel(body) {
     const w   = body._width  ?? 400;
     const h   = body._height ?? 20;
-    const { xm: cxM0, ym: cyM0 } = worldPxToDisplayedM(body.position.x, body.position.y);
+    const vis = groundVisualPosition(body);
+    const { xm: cxM0, ym: cyM0 } = worldPxToDisplayedM(vis.x, vis.y);
     const cxM = cxM0.toFixed(2);
     const cyM = cyM0.toFixed(2);
     const wM  = pxToM(w).toFixed(2);
@@ -1626,10 +1809,11 @@ export class PropertiesPanel {
       const g = this._groundBody();
       if (!g) return;
       const gh = g._height ?? 20;
+      const gVis = groundVisualPosition(g);
       const rawXM = parseFloat(this.panel.querySelector('#prop-ground-cx')?.value
-        ?? worldPxToDisplayedM(g.position.x, g.position.y).xm);
+        ?? worldPxToDisplayedM(gVis.x, gVis.y).xm);
       const rawYM = parseFloat(this.panel.querySelector('#prop-ground-cy')?.value
-        ?? worldPxToDisplayedM(g.position.x, g.position.y).ym);
+        ?? worldPxToDisplayedM(gVis.x, gVis.y).ym);
       const thetaDeg = parseFloat(this.panel.querySelector('#prop-ground-theta')?.value ?? '0');
       const angleRad = (thetaDeg * Math.PI) / 180;
       const nw = mToPx(parseFloat(this.panel.querySelector('#prop-ground-w')?.value ?? pxToM(g._width ?? 400)));
@@ -1879,182 +2063,98 @@ export class PropertiesPanel {
     });
   }
 
-  _buildBoxPanel(body) {
-    const w   = body._width  ?? 40;
-    const h   = body._height ?? 40;
-    const rawK = body._muK ?? body.friction ?? 0.3;
-    const rawS = body._muS ?? body.frictionStatic ?? rawK * 1.3;
-    const muK = Number(rawK).toFixed(3);
-    const muS = Number(rawS).toFixed(3);
-    const { vxMs, vyMs } = matterVelToDisplayMS(body.velocity.x, body.velocity.y);
-    const speed = Math.hypot(vxMs, vyMs).toFixed(3);
-    const angleDeg = (Math.atan2(vyMs, vxMs) * 180 / Math.PI).toFixed(1);
-    const { xm: xM0, ym: yM0 } = worldPxToDisplayedM(body.position.x, body.position.y);
-    const xM = xM0.toFixed(2);
-    const yM = yM0.toFixed(2);
-    const wM = pxToM(w).toFixed(2);
-    const hM = pxToM(h).toFixed(2);
+  /**
+   * Metadata-driven body inspector with optional property attach/detach.
+   */
+  _buildComponentBodyPanel(body, { title, shapeKind, newtonType, showHollow = false }) {
+    const entity = ensureEntity(body);
+    const fields = annotatePropertySections(getInspectorFields(entity), entity);
 
-    this.panel.innerHTML = `
-      <div class="prop-section-title">Box</div>
-      <div class="prop-section-title" style="margin-top:8px">Position</div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.x} (m)</span>
-        <input class="prop-value" id="prop-x" type="number" step="0.1" value="${xM}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.y} (m)</span>
-        <input class="prop-value" id="prop-y" type="number" step="0.1" value="${yM}"/>
-      </div>
-      <div class="prop-section-title" style="margin-top:8px">Initial velocity ${MATH.v0}</div>
-      <div class="prop-row">
-        <span class="prop-label">|${MATH.v0}| (m/s)</span>
-        <input class="prop-value" id="prop-speed" type="number" step="0.1" min="0" value="${speed}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.theta} (°)</span>
-        <input class="prop-value" id="prop-angle" type="number" step="1" min="-180" max="180" value="${angleDeg}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.vx} (m/s)</span>
-        <input class="prop-value" id="prop-vx" type="number" step="0.1" value="${vxMs.toFixed(3)}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.vy} (m/s)</span>
-        <input class="prop-value" id="prop-vy" type="number" step="0.1" value="${vyMs.toFixed(3)}"/>
-      </div>
-      ${this._appliedForceRowsHtml(body)}
-      ${this._angularRowsHtml(body)}
-      <div class="prop-section-title" style="margin-top:8px">Size</div>
-      <div class="prop-row">
-        <span class="prop-label">width (m)</span>
-        <input class="prop-value" id="prop-box-w" type="number" step="0.1" min="0.08" value="${wM}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">height (m)</span>
-        <input class="prop-value" id="prop-box-h" type="number" step="0.1" min="0.08" value="${hM}"/>
-      </div>
-      ${this._anchoredRowHtml(body)}
-      <div class="prop-row">
-        <span class="prop-label">mass (kg)</span>
-        <input class="prop-value" id="prop-mass" type="number" step="0.1" min="0.01" value="${bodyDisplayMass(body).toFixed(3)}"/>
-      </div>
-      <div class="prop-section-title" style="margin-top:8px">Material</div>
-      <div class="prop-row">
-        <span class="prop-label">restitution</span>
-        <input class="prop-value" id="prop-rest" type="number" step="0.05" min="0" max="1" value="${body.restitution.toFixed(2)}"/>
-      </div>
-      ${this._stickyToggleHtml(!!body._stickOnContact)}
-      <div class="prop-section-title" style="margin-top:8px">Friction (surface)</div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.mus}</span>
-        <input class="prop-value" id="prop-mus" type="number" step="0.01" min="0" max="5" value="${muS}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.muk}</span>
-        <input class="prop-value" id="prop-muk" type="number" step="0.01" min="0" max="5" value="${muK}"/>
-      </div>
-      <button class="prop-delete-btn" id="prop-delete">Delete</button>
-    `;
+    const wedgeExtras = shapeKind === 'wedge' ? {
+      getPosition: (b) => {
+        const aabb = wedgeAABBCenterWorld(b);
+        return worldPxToDisplayedM(aabb.x, aabb.y);
+      },
+      setPosition: (b, xM, yM) => {
+        this._push();
+        const cur = wedgeAABBCenterWorld(b);
+        const { xm, ym } = worldPxToDisplayedM(cur.x, cur.y);
+        const nx = xM != null ? xM : xm;
+        const ny = yM != null ? yM : ym;
+        const { x: xPx, y: yPx } = displayedMToWorldPx(nx, ny);
+        setWedgeAABBCenter(b, xPx, yPx);
+        snapWedgeToGrid(b, this._snapOn());
+        this._syncBodyRopes(b);
+      },
+      snapWedge: (b) => snapWedgeToGrid(b, this._snapOn()),
+    } : {};
 
-    this._bindV0Inputs(body);
-    this._bindAnchoredToggle(body);
-    this._bindAppliedForceInputs('box');
-    this._bindAngularInputs('box');
-    this._bindStickyToggle(body);
+    const legacyAfterPosition = [this._velocityV0RowsHtml(body)];
+    if (entity.hasComponent('appliedForce')) {
+      legacyAfterPosition.push(this._appliedForceRowsHtml(body));
+    }
+    legacyAfterPosition.push(this._angularRowsHtml(body));
 
-    this.panel.querySelector('#prop-x')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const cur = worldPxToDisplayedM(b.position.x, b.position.y);
-      const { x: xPx, y: yKeep } = displayedMToWorldPx(parseFloat(e.target.value), cur.ym);
-      Body.setPosition(b, {
-        x: snapWorldCoord(xPx, this._snapOn()),
-        y: snapWorldCoord(yKeep, this._snapOn()),
-      });
-      this._syncBodyRopes(b);
-    });
-    this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const cur = worldPxToDisplayedM(b.position.x, b.position.y);
-      const { x: xKeep, y: yPx } = displayedMToWorldPx(cur.xm, parseFloat(e.target.value));
-      Body.setPosition(b, {
-        x: snapWorldCoord(xKeep, this._snapOn()),
-        y: snapWorldCoord(yPx, this._snapOn()),
-      });
-      this._syncBodyRopes(b);
-    });
-    this.panel.querySelector('#prop-box-w')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const nw = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
-      const nh = b._height ?? 40;
-      this._scaleBoxTo(b, nw, nh);
-    });
-    this.panel.querySelector('#prop-box-h')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      const nh = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
-      const nw = b._width ?? 40;
-      this._push();
-      this._scaleBoxTo(b, nw, nh);
-    });
-    this.panel.querySelector('#prop-mass')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      const v = parseFloat(e.target.value);
-      if (v > 0) setBodyMass(b, v);
-    });
-    this.panel.querySelector('#prop-rest')?.addEventListener('change', e => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      b.restitution = parseFloat(e.target.value);
-    });
-    this._bindFrictionInputs(() =>
-      this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box'));
+    /** @type {import('../components/metadata.js').InspectorContext} */
+    const ctx = {
+      entity,
+      body,
+      push: () => this._push(),
+      snapOn: () => this._snapOn(),
+      syncRopes: (b) => this._syncBodyRopes(b),
+      scaleBox: (b, nw, nh) => this._scaleBoxTo(b, nw, nh),
+      deleteBody: () => {
+        const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === newtonType);
+        if (!b) return;
+        this._push();
+        this.engine.removeBody(b);
+        this.clear();
+      },
+      attachProperty: (id) => {
+        this._push();
+        attachProperty(body, id);
+        this.engine.invalidateEnergyTarget?.();
+        this._buildComponentBodyPanel(body, { title, shapeKind, newtonType, showHollow });
+      },
+      detachProperty: (id) => {
+        this._push();
+        detachProperty(body, id);
+        this.engine.invalidateEnergyTarget?.();
+        this._buildComponentBodyPanel(body, { title, shapeKind, newtonType, showHollow });
+      },
+      extras: {
+        shapeKind,
+        showHollow,
+        canDetach: (id) => canDetachProperty(entity, id),
+        onAnchoredChange: (b) => {
+          this._rebuildVelocityInputs(b);
+          this._setVField('#prop-mass', bodyDisplayMass(b).toFixed(3));
+        },
+        ...wedgeExtras,
+      },
+    };
 
-    this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
-      const b = this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'box');
-      if (!b) return;
-      this._push();
-      this.engine.removeBody(b);
-      this.clear();
+    mountInspector(this.panel, title, fields, ctx, {
+      legacyAfterGroups: { Position: legacyAfterPosition },
+      onMounted: () => {
+        this._bindV0Inputs(body);
+        if (entity.hasComponent('appliedForce')) {
+          this._bindAppliedForceInputs(newtonType);
+        }
+        this._bindAngularInputs(newtonType);
+      },
     });
+    this._componentInspectorRefresh = () => {
+      refreshInspectorFields(this.panel, fields, ctx);
+    };
   }
 
-  _buildWedgePanel(body) {
-    const W = body._baseWidth ?? 40;
-    const H = body._height ?? 40;
-    const footDeg = ((body._footAngle ?? defaultWedgeFootAngle(W, H)) * 180 / Math.PI).toFixed(1);
-    const rawK = body._muK ?? body.friction ?? 0.3;
-    const rawS = body._muS ?? body.frictionStatic ?? rawK * 1.3;
-    const muK = Number(rawK).toFixed(3);
-    const muS = Number(rawS).toFixed(3);
+  /** Polar + Cartesian v₀ rows (shared by dynamic bodies). */
+  _velocityV0RowsHtml(body) {
     const { vxMs, vyMs } = matterVelToDisplayMS(body.velocity.x, body.velocity.y);
     const speed = Math.hypot(vxMs, vyMs).toFixed(3);
     const angleDeg = (Math.atan2(vyMs, vxMs) * 180 / Math.PI).toFixed(1);
-    const aabb = wedgeAABBCenterWorld(body);
-    const { xm: xM0, ym: yM0 } = worldPxToDisplayedM(aabb.x, aabb.y);
-    const xM = xM0.toFixed(2);
-    const yM = yM0.toFixed(2);
-
-    this.panel.innerHTML = `
-      <div class="prop-section-title">Wedge</div>
-      <div class="prop-section-title" style="margin-top:8px">Position</div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.x} (m)</span>
-        <input class="prop-value" id="prop-x" type="number" step="0.1" value="${xM}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.y} (m)</span>
-        <input class="prop-value" id="prop-y" type="number" step="0.1" value="${yM}"/>
-      </div>
+    return `
       <div class="prop-section-title" style="margin-top:8px">Initial velocity ${MATH.v0}</div>
       <div class="prop-row">
         <span class="prop-label">|${MATH.v0}| (m/s)</span>
@@ -2071,109 +2171,7 @@ export class PropertiesPanel {
       <div class="prop-row">
         <span class="prop-label">${MATH.vy} (m/s)</span>
         <input class="prop-value" id="prop-vy" type="number" step="0.1" value="${vyMs.toFixed(3)}"/>
-      </div>
-      ${this._appliedForceRowsHtml(body)}
-      ${this._angularRowsHtml(body)}
-      <div class="prop-section-title" style="margin-top:8px">Size</div>
-      <div class="prop-row">
-        <span class="prop-label">base (m)</span>
-        <input class="prop-value" id="prop-wedge-w" type="number" step="0.1" min="0.08" value="${pxToM(W).toFixed(2)}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">height (m)</span>
-        <input class="prop-value" id="prop-wedge-h" type="number" step="0.1" min="0.08" value="${pxToM(H).toFixed(2)}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">foot ∠ (°)</span>
-        <input class="prop-value" id="prop-wedge-foot" type="number" step="1" min="5" max="85" value="${footDeg}"/>
-      </div>
-      ${this._anchoredRowHtml(body)}
-      <div class="prop-row">
-        <span class="prop-label">mass (kg)</span>
-        <input class="prop-value" id="prop-mass" type="number" step="0.1" min="0.01" value="${bodyDisplayMass(body).toFixed(3)}"/>
-      </div>
-      <div class="prop-section-title" style="margin-top:8px">Material</div>
-      <div class="prop-row">
-        <span class="prop-label">restitution</span>
-        <input class="prop-value" id="prop-rest" type="number" step="0.05" min="0" max="1" value="${body.restitution.toFixed(2)}"/>
-      </div>
-      <div class="prop-section-title" style="margin-top:8px">Friction (surface)</div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.mus}</span>
-        <input class="prop-value" id="prop-mus" type="number" step="0.01" min="0" max="5" value="${muS}"/>
-      </div>
-      <div class="prop-row">
-        <span class="prop-label">${MATH.muk}</span>
-        <input class="prop-value" id="prop-muk" type="number" step="0.01" min="0" max="5" value="${muK}"/>
-      </div>
-      <button class="prop-delete-btn" id="prop-delete">Delete</button>
-    `;
-
-    this._bindV0Inputs(body);
-    this._bindAnchoredToggle(body);
-    this._bindAppliedForceInputs('wedge');
-    this._bindAngularInputs('wedge');
-    const findW = () => this.engine.bodies.find(x => x.id === this._current?.id && x._newtonType === 'wedge');
-
-    this.panel.querySelector('#prop-x')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const cur = wedgeAABBCenterWorld(b);
-      const { xm, ym } = worldPxToDisplayedM(cur.x, cur.y);
-      const { x: xPx, y: yKeep } = displayedMToWorldPx(parseFloat(e.target.value), ym);
-      setWedgeAABBCenter(b, xPx, yKeep);
-      snapWedgeToGrid(b, this._snapOn());
-    });
-    this.panel.querySelector('#prop-y')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const cur = wedgeAABBCenterWorld(b);
-      const { xm, ym } = worldPxToDisplayedM(cur.x, cur.y);
-      const { x: xKeep, y: yPx } = displayedMToWorldPx(xm, parseFloat(e.target.value));
-      setWedgeAABBCenter(b, xKeep, yPx);
-      snapWedgeToGrid(b, this._snapOn());
-    });
-    this.panel.querySelector('#prop-wedge-w')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const W = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
-      scaleWedgeTo(b, W, b._height ?? 40, { pin: 'left' });
-      snapWedgeToGrid(b, this._snapOn());
-    });
-    this.panel.querySelector('#prop-wedge-h')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const H = snapBodySizePx(mToPx(parseFloat(e.target.value)), this._snapOn());
-      scaleWedgeTo(b, b._baseWidth ?? 40, H, { pin: 'bottom' });
-      snapWedgeToGrid(b, this._snapOn());
-    });
-    this.panel.querySelector('#prop-wedge-foot')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const rad = clampWedgeFootAngle(parseFloat(e.target.value) * Math.PI / 180);
-      const H = b._height ?? 40;
-      // Keep opposite side (vertical height) + right-angle corner, adjust base.
-      const W = Math.max(8, H / Math.tan(rad));
-      setWedgeGeometry(b, W, H, { pin: 'corner' });
-    });
-    this.panel.querySelector('#prop-mass')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      const v = parseFloat(e.target.value);
-      if (v > 0) setBodyMass(b, v);
-    });
-    this.panel.querySelector('#prop-rest')?.addEventListener('change', e => {
-      const b = findW(); if (!b) return;
-      this._push();
-      b.restitution = parseFloat(e.target.value);
-    });
-    this._bindFrictionInputs(findW);
-    this.panel.querySelector('#prop-delete')?.addEventListener('click', () => {
-      const b = findW(); if (!b) return;
-      this._push();
-      this.engine.removeBody(b);
-      this.clear();
-    });
+      </div>`;
   }
 
   _buildAnchorPanel(body) {
@@ -2364,14 +2362,15 @@ export class PropertiesPanel {
       this._setVField('#prop-mass', body.mass.toFixed(3));
       return;
     }
-    if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge') {
+    if (nt === 'ball' || nt === 'point' || nt === 'point-mass' || nt === 'box' || nt === 'wedge') {
       this._rebuildVelocityInputs(body);
       this._rebuildAngularInputs(body);
+      this._componentInspectorRefresh?.();
     }
     if (nt === 'metric-basis') {
       this._setVField('#prop-x', pxToM(body.position.x).toFixed(2));
       this._setVField('#prop-y', pxToM(body.position.y).toFixed(2));
-    } else if (nt === 'point-mass' || nt === 'ball' || nt === 'box' || nt === 'wedge' || nt === 'ground' || nt === 'anchor' || !body.isStatic) {
+    } else if (nt === 'ground' || nt === 'anchor' || !body.isStatic) {
       this._rebuildPositionInputs(body);
     }
   }

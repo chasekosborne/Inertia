@@ -193,7 +193,7 @@ src/
 | `src/physics/*` | `core/sim/` (+ domain pieces pulled out of `bodies.js`) |
 | `src/scene/*` | `core/scene/` (+ `io/scene-file`, `io/clipboard`, `io/demos`) |
 | `src/presets.js` / `scene/presets.js` | `core/domain/archetypes/` + blank document helper |
-| `src/ui/*` | `editor/` |
+| `src/editor/*` | `editor/` |
 | `src/renderer/*` | `editor/view/` |
 | `src/exporter/*`, `src/export/*` | `io/export/` |
 | `src/recorder/*` | `io/record/` |

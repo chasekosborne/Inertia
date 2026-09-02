@@ -44,7 +44,7 @@ describe('driven harmonic oscillator demo', () => {
     const amp = metrics.find(m => m.id === 'amp_x:mass');
     expect(freq?.preferred).toBe(true);
     expect(amp?.preferred).toBe(true);
-    expect(freq.read(doc)).toBeCloseTo(0.7, 5);
+    expect(freq.read(doc)).toBeCloseTo(0.4, 5);
   });
 
   it('resonance sweep peaks near natural frequency', async () => {

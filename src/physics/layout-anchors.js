@@ -3,7 +3,7 @@
  */
 
 import Matter from 'matter-js';
-import { createGround, anchorContainsWorldPoint } from './bodies.js';
+import { createGround, anchorContainsWorldPoint, groundVisualPosition } from './bodies.js';
 import {
   constraintAnchorWorld,
   isSpringConstraint,
@@ -98,7 +98,7 @@ export function retargetBodyAttachments(engine, oldBody, newBody) {
 /** True when a blue constraint-end handle should stretch length (not reattach). */
 export function isConstraintLengthStretchBody(body) {
   if (!body || body.isStatic) return false;
-  return body._newtonType === 'point-mass' || body._newtonType === 'ball' || body._newtonType === 'box' || body._newtonType === 'wedge';
+  return body._newtonType === 'ball' || body._newtonType === 'point' || body._newtonType === 'point-mass' || body._newtonType === 'box' || body._newtonType === 'wedge';
 }
 
 /**
@@ -517,10 +517,11 @@ export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
       d = Math.hypot(wx - world.x, wy - world.y);
       const hw = (body._width ?? 400) / 2;
       const hh = (body._height ?? 20) / 2;
+      const vis = groundVisualPosition(body);
       const cos = Math.cos(-body.angle);
       const sin = Math.sin(-body.angle);
-      const lx = cos * (wx - body.position.x) - sin * (wy - body.position.y);
-      const ly = sin * (wx - body.position.x) + cos * (wy - body.position.y);
+      const lx = cos * (wx - vis.x) - sin * (wy - vis.y);
+      const ly = sin * (wx - vis.x) + cos * (wy - vis.y);
       const overSlab = Math.abs(lx) <= hw + 8 && Math.abs(ly) <= hh + 8;
       if (!overSlab && d > hitPx) continue;
       if (overSlab) d = Math.min(d, hitPx);
@@ -563,11 +564,12 @@ export function findConstraintAttachTarget(engine, wx, wy, opts = {}) {
 export function groundTopEdgeWorld(body) {
   const w = body._width ?? 400;
   const h = body._height ?? 20;
+  const { x: cx, y: cy } = groundVisualPosition(body);
   const cos = Math.cos(body.angle);
   const sin = Math.sin(body.angle);
   const corner = (lx, ly) => ({
-    x: body.position.x + cos * lx - sin * ly,
-    y: body.position.y + sin * lx + cos * ly,
+    x: cx + cos * lx - sin * ly,
+    y: cy + sin * lx + cos * ly,
   });
   return { L: corner(-w / 2, -h / 2), R: corner(w / 2, -h / 2), h };
 }

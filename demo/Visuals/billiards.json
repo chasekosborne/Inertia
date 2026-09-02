@@ -1,0 +1,593 @@
+{
+  "format": "newton-scene",
+  "version": 2,
+  "meta": {
+    "name": "Billiards break",
+    "source": "demo",
+    "demoId": "billiards",
+    "description": "Top-view billiards table with zero gravity. A white cue ball breaks a full 15-ball rack inside four cushioned walls. Balls are coloured like standard numbered pool balls."
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "environment": {
+    "gravity": {
+      "enabled": false,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "center": {
+      "x": 2.25,
+      "y": 4.1000000000000005
+    },
+    "view": {
+      "width": 5.050000000000001,
+      "height": 8.750000000000002
+    }
+  },
+  "bodies": [
+    {
+      "id": "cushion_bottom",
+      "type": "ground",
+      "position": {
+        "x": 2.25,
+        "y": 8.275
+      },
+      "angle": 0,
+      "geometry": {
+        "width": 4.65,
+        "height": 0.15000000000000002
+      },
+      "material": {
+        "restitution": 0.85,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "cushion_top",
+      "type": "ground",
+      "position": {
+        "x": 2.25,
+        "y": -0.07500000000000001
+      },
+      "angle": 3.141592653589793,
+      "geometry": {
+        "width": 4.65,
+        "height": 0.15000000000000002
+      },
+      "material": {
+        "restitution": 0.85,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "cushion_left",
+      "type": "ground",
+      "position": {
+        "x": -0.07500000000000001,
+        "y": 4.1000000000000005
+      },
+      "angle": 1.5707963267948966,
+      "geometry": {
+        "width": 8.350000000000001,
+        "height": 0.15000000000000002
+      },
+      "material": {
+        "restitution": 0.85,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "cushion_right",
+      "type": "ground",
+      "position": {
+        "x": 4.575,
+        "y": 4.1000000000000005
+      },
+      "angle": -1.5707963267948966,
+      "geometry": {
+        "width": 8.350000000000001,
+        "height": 0.15000000000000002
+      },
+      "material": {
+        "restitution": 0.85,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "cue",
+      "type": "ball",
+      "position": {
+        "x": 2.25,
+        "y": 6.15
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": -6
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#F5F5F0",
+        "stroke": "#333333"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_1",
+      "type": "ball",
+      "position": {
+        "x": 2.25,
+        "y": 2.0500000000000003
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#F9D71C"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_2",
+      "type": "ball",
+      "position": {
+        "x": 2.14975,
+        "y": 1.8763619065412203
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#0B3D91"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_3",
+      "type": "ball",
+      "position": {
+        "x": 2.35025,
+        "y": 1.8763619065412203
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#C41E3A"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_4",
+      "type": "ball",
+      "position": {
+        "x": 2.0495,
+        "y": 1.7027238130824403
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#6A0DAD"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_8",
+      "type": "ball",
+      "position": {
+        "x": 2.25,
+        "y": 1.7027238130824403
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#1A1A1A",
+        "stroke": "#444444"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_5",
+      "type": "ball",
+      "position": {
+        "x": 2.4505,
+        "y": 1.7027238130824403
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#FF6B00"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_6",
+      "type": "ball",
+      "position": {
+        "x": 1.94925,
+        "y": 1.5290857196236605
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#0B7A3B"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_7",
+      "type": "ball",
+      "position": {
+        "x": 2.14975,
+        "y": 1.5290857196236605
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#7B1113"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_9",
+      "type": "ball",
+      "position": {
+        "x": 2.35025,
+        "y": 1.5290857196236605
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#F9D71C"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_10",
+      "type": "ball",
+      "position": {
+        "x": 2.55075,
+        "y": 1.5290857196236605
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#0B3D91"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_11",
+      "type": "ball",
+      "position": {
+        "x": 1.849,
+        "y": 1.3554476261648805
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#C41E3A"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_12",
+      "type": "ball",
+      "position": {
+        "x": 2.0495,
+        "y": 1.3554476261648805
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#6A0DAD"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_13",
+      "type": "ball",
+      "position": {
+        "x": 2.25,
+        "y": 1.3554476261648805
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#FF6B00"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_14",
+      "type": "ball",
+      "position": {
+        "x": 2.4505,
+        "y": 1.3554476261648805
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#0B7A3B"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_15",
+      "type": "ball",
+      "position": {
+        "x": 2.651,
+        "y": 1.3554476261648805
+      },
+      "angle": 0,
+      "mass": 0.17,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1,
+        "fill": "#7B1113"
+      },
+      "material": {
+        "restitution": 0.92,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    }
+  ],
+  "constraints": [],
+  "labels": [
+    {
+      "id": "label_1",
+      "text": "1",
+      "body": "ball_1",
+      "fontSize": 8
+    },
+    {
+      "id": "label_2",
+      "text": "2",
+      "body": "ball_2",
+      "fontSize": 8
+    },
+    {
+      "id": "label_3",
+      "text": "3",
+      "body": "ball_3",
+      "fontSize": 8
+    },
+    {
+      "id": "label_4",
+      "text": "4",
+      "body": "ball_4",
+      "fontSize": 8
+    },
+    {
+      "id": "label_5",
+      "text": "5",
+      "body": "ball_5",
+      "fontSize": 8
+    },
+    {
+      "id": "label_6",
+      "text": "6",
+      "body": "ball_6",
+      "fontSize": 8
+    },
+    {
+      "id": "label_7",
+      "text": "7",
+      "body": "ball_7",
+      "fontSize": 8
+    },
+    {
+      "id": "label_8",
+      "text": "8",
+      "body": "ball_8",
+      "fontSize": 8
+    },
+    {
+      "id": "label_9",
+      "text": "9",
+      "body": "ball_9",
+      "fontSize": 8
+    },
+    {
+      "id": "label_10",
+      "text": "10",
+      "body": "ball_10",
+      "fontSize": 8
+    },
+    {
+      "id": "label_11",
+      "text": "11",
+      "body": "ball_11",
+      "fontSize": 8
+    },
+    {
+      "id": "label_12",
+      "text": "12",
+      "body": "ball_12",
+      "fontSize": 8
+    },
+    {
+      "id": "label_13",
+      "text": "13",
+      "body": "ball_13",
+      "fontSize": 8
+    },
+    {
+      "id": "label_14",
+      "text": "14",
+      "body": "ball_14",
+      "fontSize": 8
+    },
+    {
+      "id": "label_15",
+      "text": "15",
+      "body": "ball_15",
+      "fontSize": 8
+    }
+  ]
+}

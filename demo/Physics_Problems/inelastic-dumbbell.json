@@ -1,0 +1,132 @@
+{
+  "format": "newton-scene",
+  "version": 2,
+  "meta": {
+    "name": "Inelastic stick — mass into dumbbell",
+    "source": "demo",
+    "demoId": "inelastic-dumbbell",
+    "description": "Frictionless table (top view). Point mass m = 1 kg at speed v = 2 m/s collides and sticks to one end of a stationary dumbbell (two masses m, massless rod ℓ = 1 m). Ideal analytics: V_cm = v/3 ≈ 0.667 m/s, ω = v/(2ℓ) ≈ 1.000 rad/s (into the page), double-mass end after half a revolution: v/2 ≈ 1.000 m/s."
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "environment": {
+    "gravity": {
+      "enabled": false,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "s": 1.1
+  },
+  "bodies": [
+    {
+      "id": "projectile",
+      "type": "ball",
+      "position": {
+        "x": -0.13999999999999999,
+        "y": -0.5
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 2,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.06,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "stickOnContact": true
+      }
+    },
+    {
+      "id": "dumbbell_top",
+      "type": "ball",
+      "position": {
+        "x": 0,
+        "y": -0.5
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.06,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0,
+        "stickOnContact": true
+      }
+    },
+    {
+      "id": "dumbbell_bottom",
+      "type": "ball",
+      "position": {
+        "x": 0,
+        "y": 0.5
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.06,
+        "hollow": false
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "id": "rod_1",
+      "type": "rod",
+      "bodyA": "dumbbell_top",
+      "bodyB": "dumbbell_bottom",
+      "anchorA": {
+        "x": 0,
+        "y": 0
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
+      "length": 1
+    }
+  ],
+  "uiAggregates": [
+    {
+      "id": "agg_dumbbell",
+      "name": "Dumbbell",
+      "members": [
+        "dumbbell_top",
+        "dumbbell_bottom"
+      ]
+    }
+  ]
+}

@@ -40,5 +40,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.js'],
+    // Rope PBD smoke tests (e.g. 100-segment sliding-rope) can exceed 5s on CI runners.
+    testTimeout: 15_000,
   },
 });

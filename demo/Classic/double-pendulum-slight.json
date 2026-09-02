@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Double pendulum",
     "source": "file"
@@ -29,7 +29,7 @@
     },
     {
       "id": "bob1",
-      "type": "ball",
+      "type": "point",
       "position": {
         "x": 0.3078181289931019,
         "y": 0.8457233587073175
@@ -53,7 +53,7 @@
     },
     {
       "id": "bob2",
-      "type": "ball",
+      "type": "point",
       "position": {
         "x": 0.6156362579862038,
         "y": 1.691446717414635

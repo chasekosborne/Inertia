@@ -4,16 +4,20 @@ import {
 } from '../units.js';
 import { getOriginDisplayedM, worldPxToDisplayedM } from '../world-origin.js';
 import { SCENE_FORMAT, SCENE_VERSION } from './schema.js';
-import { wedgeAABBCenterWorld, bodyDisplayMass } from '../physics/bodies.js';
+import { wedgeAABBCenterWorld, bodyDisplayMass, groundVisualPosition } from '../physics/bodies.js';
 import {
   getAppliedForce,
   getAppliedForceDirection,
   isDrivenAppliedForce,
   getDrivenAppliedForceExpr,
+  getDrivenAppliedFrequencyExpr,
+  getDrivenAppliedParameters,
 } from '../physics/applied-force.js';
 import { getAppliedTorque } from '../physics/applied-torque.js';
 import { isDrivenPivot, getDrivenTorqueExpr } from '../physics/driven-pivot.js';
 import { matterOmegaToDisplay } from '../physics/angular.js';
+import { serializeBodyMaterial } from './serialize-components.js';
+import { hasComponent } from '../components/entity.js';
 
 /**
  * @param {import('../physics/engine.js').PhysicsEngine} engine
@@ -33,7 +37,11 @@ export function serializeScene(engine, opts = {}) {
   const bodies = engine.bodies
     .filter(b => b._newtonType !== 'metric-basis')
     .map(b => {
-      const origin = b._newtonType === 'wedge' ? wedgeAABBCenterWorld(b) : b.position;
+      const origin = b._newtonType === 'wedge'
+        ? wedgeAABBCenterWorld(b)
+        : b._newtonType === 'ground'
+          ? groundVisualPosition(b)
+          : b.position;
       const { xm, ym } = worldPxToDisplayedM(origin.x, origin.y);
       const { vxMs, vyMs } = matterVelToDisplayMS(b.velocity.x, b.velocity.y);
       /** @type {import('./schema.js').SceneBody} */
@@ -45,12 +53,14 @@ export function serializeScene(engine, opts = {}) {
         velocity: { vx: vxMs, vy: vyMs },
       };
 
-      if (b._newtonType === 'point-mass' || b._newtonType === 'ball' || b._newtonType === 'anchor') {
+      if (b._newtonType === 'ball' || b._newtonType === 'point' || b._newtonType === 'anchor') {
         entry.mass = bodyDisplayMass(b);
         entry.geometry = { radius: (b._radius ?? b.circleRadius ?? 10) / PX_PER_M };
-        if (b._newtonType === 'point-mass') {
+        if (b._newtonType === 'ball') {
           entry.geometry.hollow = b._hollow === true;
         }
+        if (typeof b._fill === 'string' && b._fill) entry.geometry.fill = b._fill;
+        if (typeof b._stroke === 'string' && b._stroke) entry.geometry.stroke = b._stroke;
       } else if (b._newtonType === 'box') {
         entry.mass = bodyDisplayMass(b);
         entry.geometry = {
@@ -73,33 +83,12 @@ export function serializeScene(engine, opts = {}) {
       }
 
       if (b._newtonType !== 'anchor') {
-        entry.material = {
-          restitution: b.restitution,
-          muK: b._muK ?? b.friction,
-          muS: b._muS ?? b.frictionStatic ?? b.friction,
-          frictionAir: b.frictionAir,
-        };
-        if (b._stickOnContact) entry.material.stickOnContact = true;
-        if (b._lockRotation) entry.material.lockRotation = true;
-        if (b._ropeSegment) {
-          entry.material.ropeSegment = true;
-          if (b._ropeId) entry.material.ropeId = b._ropeId;
-          if (Number.isFinite(b._ropeIndex)) entry.material.ropeIndex = b._ropeIndex;
-          if (Number.isFinite(b._ropeCount)) entry.material.ropeCount = b._ropeCount;
-          if (typeof b._ropeName === 'string' && b._ropeName) entry.material.ropeName = b._ropeName;
-          if (b._ropeRestLength > 0) entry.material.ropeRestLength = b._ropeRestLength / PX_PER_M;
-          if (b._ropeHost?.body) {
-            entry.material.ropeHost = {
-              body: b._ropeHost.body.label ?? String(b._ropeHost.body.id),
-              x: (b._ropeHost.local?.x ?? 0) / PX_PER_M,
-              y: (b._ropeHost.local?.y ?? 0) / PX_PER_M,
-            };
-          }
-        }
+        const material = serializeBodyMaterial(b);
+        if (material) entry.material = material;
       }
 
       if (
-        (b._newtonType === 'point-mass' || b._newtonType === 'ball'
+        (b._newtonType === 'ball' || b._newtonType === 'point'
           || b._newtonType === 'box' || b._newtonType === 'wedge')
         && b.isStatic
       ) {
@@ -107,16 +96,28 @@ export function serializeScene(engine, opts = {}) {
       }
 
       const af = getAppliedForce(b);
-      if (af) {
-        entry.appliedForce = { F: af.F, thetaDeg: af.thetaDeg };
-      } else if (isDrivenAppliedForce(b)) {
-        entry.appliedForce = { F: 0, thetaDeg: getAppliedForceDirection(b) };
+      if (hasComponent(b, 'appliedForce') || af || isDrivenAppliedForce(b)) {
+        if (af) {
+          entry.appliedForce = { F: af.F, thetaDeg: af.thetaDeg };
+        } else if (isDrivenAppliedForce(b)) {
+          entry.appliedForce = { F: 0, thetaDeg: getAppliedForceDirection(b) };
+        }
       }
 
-      if (isDrivenAppliedForce(b)) {
+      if (hasComponent(b, 'appliedForce') && isDrivenAppliedForce(b)) {
         entry.drivenApplied = true;
         const expr = getDrivenAppliedForceExpr(b);
         if (expr) entry.drivenAppliedForce = expr;
+        const frequency = getDrivenAppliedFrequencyExpr(b);
+        if (frequency) entry.drivenAppliedFrequency = frequency;
+        if (typeof b._drivenAppliedPhaseParameter === 'string'
+          && b._drivenAppliedPhaseParameter) {
+          entry.drivenAppliedPhaseParameter = b._drivenAppliedPhaseParameter;
+        }
+        const parameters = getDrivenAppliedParameters(b);
+        if (Object.keys(parameters).length) {
+          entry.parameters = JSON.parse(JSON.stringify(parameters));
+        }
       }
 
       const omega = matterOmegaToDisplay(b.angularVelocity || 0);
@@ -124,7 +125,7 @@ export function serializeScene(engine, opts = {}) {
         entry.angularVelocity = omega;
       }
       const tau = getAppliedTorque(b);
-      if (tau != null) {
+      if (hasComponent(b, 'appliedTorque') && tau != null) {
         entry.appliedTorque = tau;
       }
 

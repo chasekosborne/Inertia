@@ -25,6 +25,10 @@ describe('expr compiler', () => {
   it('handles implicit multiplication', () => {
     expect(evalExpr('2pi', 0)).toBeCloseTo(2 * Math.PI, 10);
     expect(evalExpr('2t', 3)).toBeCloseTo(6, 10);
+    expect(evalExpr('2sin(2pi t)', 0.25)).toBeCloseTo(2, 10);
+    expect(evalExpr('2sqrt(t)', 0.25)).toBeCloseTo(1, 10);
+    expect(evalExpr('(1+t)sin(t)', 0)).toBeCloseTo(0, 10);
+    expect(evalExpr(latexToExpr('2\\sqrt{t}'), 0.25)).toBeCloseTo(1, 10);
   });
 
   it('rejects unknown identifiers', () => {

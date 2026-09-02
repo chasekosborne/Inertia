@@ -3,6 +3,7 @@
  */
 
 import { MATH_PLAIN } from '../math-text.js';
+import { compileExpr } from '../physics/expr.js';
 
 /**
  * @typedef {object} SweepParam
@@ -32,6 +33,47 @@ function formatDriveNum(n) {
 }
 
 /**
+ * Parse a simple instantaneous frequency expression f(t) = f₀ + r·t.
+ * @param {string|null|undefined} expr
+ * @returns {{ f0: number, rate: number }|null}
+ */
+function parseDrivenFrequency(expr) {
+  const s = String(expr ?? '').replace(/\s+/g, '');
+  const number = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?';
+  const m = new RegExp(`^(${number})(?:\\+(${number})\\*t)?$`, 'i').exec(s);
+  if (!m) return null;
+  return { f0: Number(m[1]), rate: Number(m[2] ?? 0) };
+}
+
+/**
+ * Read a named angular-frequency parameter at t = 0 as Hz.
+ * @param {object} doc
+ * @param {object} body
+ * @returns {number|null}
+ */
+function readDrivenParameterFrequency(doc, body) {
+  const name = body?.drivenAppliedPhaseParameter;
+  const expression = name
+    ? (body.parameters?.[name] ?? doc.parameters?.[name])?.expression
+    : null;
+  const compiled = compileExpr(expression);
+  if (!compiled.ok) return null;
+  const omega = compiled.eval({ t: 0 });
+  return isFinite(omega) ? omega / (2 * Math.PI) : null;
+}
+
+/**
+ * @param {string|null|undefined} expr
+ * @returns {number|null}
+ */
+function parseDrivenAmplitude(expr) {
+  const match = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*\*/.exec(String(expr ?? ''));
+  if (!match) return null;
+  const value = Number(match[1]);
+  return isFinite(value) ? value : null;
+}
+
+/**
  * Parse F₀·sin(2π f t) style driven-applied expressions.
  * @param {string|null|undefined} expr
  * @returns {{ F0: number, fHz: number }|null}
@@ -39,13 +81,15 @@ function formatDriveNum(n) {
 export function parseDrivenSinusoid(expr) {
   const s = String(expr ?? '').replace(/\s+/g, '');
   if (!s) return null;
-  let m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*sin\(2\*pi\*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*t\)$/i.exec(s);
+  const number = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][+-]?\\d+)?';
+  const product = '\\*?';
+  let m = new RegExp(`^(${number})${product}sin\\(${product}2${product}pi${product}(${number})${product}t\\)$`, 'i').exec(s);
   if (m) return { F0: Number(m[1]), fHz: Number(m[2]) };
-  m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*sin\(2\*pi\*t\)$/i.exec(s);
+  m = new RegExp(`^(${number})${product}sin\\(${product}2${product}pi${product}t\\)$`, 'i').exec(s);
   if (m) return { F0: Number(m[1]), fHz: 1 };
-  m = /^sin\(2\*pi\*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\*t\)$/i.exec(s);
+  m = new RegExp(`^sin\\(${product}2${product}pi${product}(${number})${product}t\\)$`, 'i').exec(s);
   if (m) return { F0: 1, fHz: Number(m[1]) };
-  m = /^sin\(2\*pi\*t\)$/i.exec(s);
+  m = new RegExp(`^sin\\(${product}2${product}pi${product}t\\)$`, 'i').exec(s);
   if (m) return { F0: 1, fHz: 1 };
   return null;
 }
@@ -55,7 +99,44 @@ export function parseDrivenSinusoid(expr) {
  * @param {number} fHz
  */
 export function formatDrivenSinusoid(F0, fHz) {
-  return `${formatDriveNum(F0)}*sin(2*pi*${formatDriveNum(fHz)}*t)`;
+  return `${formatDriveNum(F0)}sin(2pi${formatDriveNum(fHz)}t)`;
+}
+
+/**
+ * A named scene parameter is sweepable at its initial (t = 0) value. During
+ * a sweep it becomes constant, which keeps each run deterministic.
+ * @param {string} name
+ * @param {object} definition
+ * @param {object} [opts]
+ * @returns {SweepParam}
+ */
+export function sceneParameterParam(name, definition, bodyId, opts = {}) {
+  const id = String(name);
+  const label = definition?.label || id;
+  const unit = definition?.unit || '';
+  return {
+    id: `body.${bodyId}.parameter.${id}`,
+    label,
+    unit,
+    group: 'Parameters',
+    preferred: opts.preferred === true,
+    defaultMin: id.toLowerCase() === 'omega' ? 1 : 0,
+    defaultMax: id.toLowerCase() === 'omega' ? 10 : 5,
+    defaultCount: 10,
+    apply(doc, value) {
+      const body = doc.bodies?.find(x => x.id === bodyId);
+      const parameter = body?.parameters?.[id] ?? doc.parameters?.[id];
+      if (parameter) parameter.expression = formatDriveNum(value);
+    },
+    read(doc) {
+      const body = doc.bodies?.find(x => x.id === bodyId);
+      const expression = (body?.parameters?.[id] ?? doc.parameters?.[id])?.expression;
+      const compiled = compileExpr(expression);
+      if (!compiled.ok) return null;
+      const value = compiled.eval({ t: 0 });
+      return isFinite(value) ? value : null;
+    },
+  };
 }
 
 /** @type {SweepParam[]} */
@@ -360,10 +441,22 @@ export function bodyDrivenForceFreqParam(bodyId, opts = {}) {
       const b = doc.bodies?.find(x => x.id === bodyId);
       if (!b) return;
       const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
-      const F0 = parsed?.F0 ?? 2;
+      const phaseParameter = b.drivenAppliedPhaseParameter;
+      const F0 = parsed?.F0 ?? parseDrivenAmplitude(b.drivenAppliedForce) ?? 2;
       const fHz = Math.max(0, value);
       b.drivenApplied = true;
-      b.drivenAppliedForce = formatDrivenSinusoid(F0, fHz);
+      const phaseDefinition = phaseParameter
+        ? (b.parameters?.[phaseParameter] ?? doc.parameters?.[phaseParameter])
+        : null;
+      b.drivenAppliedForce = phaseParameter && phaseDefinition
+        ? `${formatDriveNum(F0)}sin(${phaseParameter} t)`
+        : formatDrivenSinusoid(F0, fHz);
+      // Parameter sweeps use a fixed-frequency run, even when the demo's
+      // interactive baseline is a chirp.
+      b.drivenAppliedFrequency = formatDriveNum(fHz);
+      if (phaseDefinition) {
+        phaseDefinition.expression = formatDriveNum(2 * Math.PI * fHz);
+      }
       if (!b.appliedForce || typeof b.appliedForce !== 'object') {
         b.appliedForce = { F: 0, thetaDeg: 0 };
       } else if (!(b.appliedForce.F > 0)) {
@@ -373,6 +466,10 @@ export function bodyDrivenForceFreqParam(bodyId, opts = {}) {
     read(doc) {
       const b = doc.bodies?.find(x => x.id === bodyId);
       if (!b?.drivenApplied) return null;
+      const frequency = parseDrivenFrequency(b.drivenAppliedFrequency);
+      if (frequency && isFinite(frequency.f0)) return frequency.f0;
+      const namedFrequency = readDrivenParameterFrequency(doc, b);
+      if (namedFrequency != null) return namedFrequency;
       const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
       return parsed && isFinite(parsed.fHz) ? parsed.fHz : null;
     },
@@ -398,10 +495,24 @@ export function bodyDrivenForceAmpParam(bodyId) {
       const b = doc.bodies?.find(x => x.id === bodyId);
       if (!b) return;
       const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
-      const fHz = parsed?.fHz ?? 1;
+      const frequency = parseDrivenFrequency(b.drivenAppliedFrequency);
+      const fHz = frequency?.f0
+        ?? readDrivenParameterFrequency(doc, b)
+        ?? parsed?.fHz
+        ?? 1;
       const F0 = Math.max(0, value);
       b.drivenApplied = true;
-      b.drivenAppliedForce = formatDrivenSinusoid(F0, fHz);
+      const phaseDefinition = b.drivenAppliedPhaseParameter
+        ? (b.parameters?.[b.drivenAppliedPhaseParameter]
+          ?? doc.parameters?.[b.drivenAppliedPhaseParameter])
+        : null;
+      b.drivenAppliedForce = b.drivenAppliedPhaseParameter && phaseDefinition
+        ? `${formatDriveNum(F0)}sin(${b.drivenAppliedPhaseParameter} t)`
+        : formatDrivenSinusoid(F0, fHz);
+      b.drivenAppliedFrequency = formatDriveNum(fHz);
+      if (phaseDefinition) {
+        phaseDefinition.expression = formatDriveNum(2 * Math.PI * fHz);
+      }
       if (!b.appliedForce || typeof b.appliedForce !== 'object') {
         b.appliedForce = { F: 0, thetaDeg: 0 };
       }
@@ -410,7 +521,9 @@ export function bodyDrivenForceAmpParam(bodyId) {
       const b = doc.bodies?.find(x => x.id === bodyId);
       if (!b?.drivenApplied) return null;
       const parsed = parseDrivenSinusoid(b.drivenAppliedForce);
-      return parsed && isFinite(parsed.F0) ? parsed.F0 : null;
+      return parsed && isFinite(parsed.F0)
+        ? parsed.F0
+        : parseDrivenAmplitude(b.drivenAppliedForce);
     },
   };
 }
@@ -463,7 +576,15 @@ export function paramsForScene(doc, opts = {}) {
     if (b.type === 'ground' || b.type === 'anchor' || b.type === 'metric-basis') continue;
     if (filterId && b.id !== filterId) continue;
 
-    if (b.type === 'box' || b.type === 'ball' || b.type === 'wedge' || b.type === 'point-mass') {
+    for (const [name, definition] of Object.entries(
+      b.parameters ?? (b.drivenApplied === true ? doc?.parameters : {}) ?? {},
+    )) {
+      list.push(sceneParameterParam(name, definition, b.id, {
+        preferred: preferDrive && name.toLowerCase() === 'omega',
+      }));
+    }
+
+    if (b.type === 'box' || b.type === 'ball' || b.type === 'point' || b.type === 'point-mass' || b.type === 'wedge') {
       if (b.drivenApplied === true || preferDrive) {
         list.push(bodyDrivenForceFreqParam(b.id, { preferred: preferDrive }));
         list.push(bodyDrivenForceAmpParam(b.id));
@@ -478,7 +599,7 @@ export function paramsForScene(doc, opts = {}) {
     list.push(bodyVelocityThetaParam(b.id));
     list.push(bodyVyParam(b.id));
     list.push(bodyVxParam(b.id));
-    if (b.type === 'ball' || b.type === 'box' || b.type === 'wedge' || b.type === 'point-mass') {
+    if (b.type === 'point' || b.type === 'ball' || b.type === 'box' || b.type === 'wedge' || b.type === 'point-mass') {
       list.push(bodyMassParam(b.id));
     }
   }

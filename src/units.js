@@ -81,16 +81,18 @@ export function getWeightPxPerKg() {
 export const DEFAULT_BOX_SIZE_M = 0.4;
 
 /**
- * Default radius for circle / point-mass (m).
- * Diameter equals {@link DEFAULT_BOX_SIZE_M} so a circle matches a default box.
+ * Default radius for ball (m): diameter matches {@link DEFAULT_BOX_SIZE_M}.
  */
-export const DEFAULT_CIRCLE_RADIUS_M = DEFAULT_BOX_SIZE_M / 2;
+export const DEFAULT_BALL_RADIUS_M = DEFAULT_BOX_SIZE_M / 2;
 
-/** @deprecated Use {@link DEFAULT_CIRCLE_RADIUS_M}. */
-export const DEFAULT_POINT_MASS_RADIUS_M = DEFAULT_CIRCLE_RADIUS_M;
+/** @deprecated Use {@link DEFAULT_BALL_RADIUS_M}. */
+export const DEFAULT_CIRCLE_RADIUS_M = DEFAULT_BALL_RADIUS_M;
 
-/** Default radius for solid ball (m): smaller than the circle. */
-export const DEFAULT_BALL_RADIUS_M = 0.06;
+/** @deprecated Use {@link DEFAULT_BALL_RADIUS_M}. */
+export const DEFAULT_POINT_MASS_RADIUS_M = DEFAULT_BALL_RADIUS_M;
+
+/** Default radius for solid point (m): smaller than a ball. */
+export const DEFAULT_POINT_RADIUS_M = 0.06;
 
 /**
  * Default position of the metric-basis body in world space (metres → px via {@link mToPx}).

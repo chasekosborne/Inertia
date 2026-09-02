@@ -1,11 +1,14 @@
 import {
   isDrivenAppliedForce,
   evaluateDrivenAppliedForce,
+  evaluateDrivenAppliedParameters,
+  evaluateDrivenAppliedOmega,
 } from '../physics/applied-force.js';
 import {
   isDrivenPivot,
   evaluateDrivenTorque,
 } from '../physics/driven-pivot.js';
+import { groundVisualPosition } from '../physics/bodies.js';
 
 /**
  * Recorder: captures per-frame snapshots of the physics world state.
@@ -67,12 +70,19 @@ export class Recorder {
   _snapBody(b, simTime) {
     const drivenApplied = isDrivenAppliedForce(b);
     let drivenAppliedF = null;
+    let drivenAppliedOmega = null;
+    let drivenAppliedParameters = null;
     if (drivenApplied) {
       // Prefer a fresh eval at capture time so the series is complete even if
       // the last physics sample was skipped (F=0) or not yet written.
       const F = evaluateDrivenAppliedForce(b, simTime);
       if (Number.isFinite(F)) drivenAppliedF = F;
       else if (Number.isFinite(b._drivenAppliedLastF)) drivenAppliedF = b._drivenAppliedLastF;
+      const omega = evaluateDrivenAppliedOmega(b, simTime);
+      if (Number.isFinite(omega)) drivenAppliedOmega = omega;
+      else if (Number.isFinite(b._drivenAppliedLastOmega)) drivenAppliedOmega = b._drivenAppliedLastOmega;
+      const values = evaluateDrivenAppliedParameters(b, simTime);
+      if (values && Object.keys(values).length) drivenAppliedParameters = values;
     }
 
     const drivenPivot = isDrivenPivot(b);
@@ -83,12 +93,15 @@ export class Recorder {
       else if (Number.isFinite(b._drivenTorqueLast)) drivenTorque = b._drivenTorqueLast;
     }
 
+    const pose = b._newtonType === 'ground' ? groundVisualPosition(b) : b.position;
+
     const snap = {
       id:    b.id,
       type:  b._newtonType ?? 'generic',
+      bodySnapFormat: 2,
       label: b.label || null,
-      x:     b.position.x,
-      y:     b.position.y,
+      x:     pose.x,
+      y:     pose.y,
       angle: b.angle,
       vx:    b.velocity.x,
       vy:    b.velocity.y,
@@ -109,10 +122,13 @@ export class Recorder {
       frictionAir: b.frictionAir ?? null,
       stickOnContact: !!b._stickOnContact,
       lockRotation: !!b._lockRotation,
+      ropeSegment: !!b._ropeSegment,
       driven: drivenPivot,
       drivenVisualAngle: Number.isFinite(b._drivenVisualAngle) ? b._drivenVisualAngle : 0,
       drivenApplied,
       drivenAppliedF,
+      drivenAppliedOmega,
+      drivenAppliedParameters,
       drivenTorque,
       weldParts: null,
     };
@@ -132,7 +148,7 @@ export class Recorder {
       const dx = p.position.x - body.position.x;
       const dy = p.position.y - body.position.y;
       return {
-        type: meta.type ?? (p.circleRadius ? 'point-mass' : 'box'),
+        type: meta.type === 'point-mass' ? 'ball' : meta.type ?? (p.circleRadius ? 'ball' : 'box'),
         width: meta.width ?? (p.bounds.max.x - p.bounds.min.x),
         height: meta.height ?? (p.bounds.max.y - p.bounds.min.y),
         radius: meta.radius ?? p.circleRadius ?? p._radius ?? null,

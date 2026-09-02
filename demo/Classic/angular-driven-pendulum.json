@@ -1,6 +1,6 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Driven pendulum",
     "source": "file"
@@ -27,11 +27,11 @@
         "radius": 0.06
       },
       "driven": true,
-      "drivenTorque": "2*sin(2.86*t)"
+      "drivenTorque": "2sin(2.86t)"
     },
     {
       "id": "bob",
-      "type": "ball",
+      "type": "point",
       "position": {
         "x": 7.34788079488412e-17,
         "y": 1.2

@@ -9,7 +9,7 @@
  */
 
 import Matter from 'matter-js';
-import { createPointMass } from './bodies.js';
+import { createBall } from './bodies.js';
 import { createRod, constraintAnchorWorld } from './constraints.js';
 import { mToPx, pxToM, PX_PER_M } from '../units.js';
 
@@ -102,7 +102,7 @@ export function createFreeRope(engine, pointsWorldPx, opts = {}) {
   const bodies = [];
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    const node = createPointMass(n.x, n.y, {
+    const node = createBall(n.x, n.y, {
       radius,
       mass,
       muK,
@@ -160,7 +160,7 @@ export function buildFreeRopeSceneParts(pointsM, opts = {}) {
 
   const bodies = nodes.map((n, i) => ({
     id: `${prefix}_${i}`,
-    type: 'point-mass',
+    type: 'ball',
     position: { x: n.x, y: n.y },
     angle: 0,
     mass,

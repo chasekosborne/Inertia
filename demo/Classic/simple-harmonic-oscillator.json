@@ -1,46 +1,94 @@
 {
   "format": "newton-scene",
-  "version": 1,
+  "version": 2,
   "meta": {
     "name": "Simple harmonic oscillator",
     "source": "demo",
     "demoId": "simple-harmonic-oscillator",
     "description": "Horizontal spring–mass on frictionless ground; the spring is anchored to a vertical wall at x = −1.2 m. m = 1 kg, k = 40 N/m. Equilibrium at x = 0 m (rest length 1.2 m). Released from x = 0.5 m. ω = √(k/m) ≈ 6.32 rad/s."
   },
-  "metricOrigin": { "x": 0, "y": 0 },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
   "environment": {
-    "gravity": { "enabled": false, "g": 9.81 },
-    "air": { "enabled": false, "cd": 0.47, "area": 0.045, "rho": 1.225 }
+    "gravity": {
+      "enabled": false,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
   },
   "camera": {
-    "center": { "x": 0.3, "y": -0.375 },
-    "view": { "width": 3.4, "height": 1.85 }
+    "center": {
+      "x": 0.3,
+      "y": -0.375
+    },
+    "view": {
+      "width": 3.4,
+      "height": 1.85
+    }
   },
   "bodies": [
     {
       "id": "ground_floor",
       "type": "ground",
-      "position": { "x": 0.4, "y": 0.1 },
+      "position": {
+        "x": 0.4,
+        "y": 0.1
+      },
       "angle": 0,
-      "geometry": { "width": 3.2, "height": 0.2 },
-      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+      "geometry": {
+        "width": 3.2,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
     },
     {
       "id": "ground_wall",
       "type": "ground",
-      "position": { "x": -1.3, "y": -0.6 },
+      "position": {
+        "x": -1.3,
+        "y": -0.6
+      },
       "angle": 1.5707963267948966,
-      "geometry": { "width": 1.2, "height": 0.2 },
-      "material": { "restitution": 0, "muK": 0, "muS": 0, "frictionAir": 0 }
+      "geometry": {
+        "width": 1.2,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0
+      }
     },
     {
       "id": "mass",
       "type": "box",
-      "position": { "x": 0.5, "y": -0.1 },
+      "position": {
+        "x": 0.5,
+        "y": -0.1
+      },
       "angle": 0,
       "mass": 1,
-      "velocity": { "vx": 0, "vy": 0 },
-      "geometry": { "width": 0.2, "height": 0.2 },
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "width": 0.2,
+        "height": 0.2
+      },
       "material": {
         "restitution": 0,
         "muK": 0,
@@ -56,8 +104,14 @@
       "type": "spring",
       "bodyA": "ground_wall",
       "bodyB": "mass",
-      "anchorA": { "x": 0.5, "y": -0.1 },
-      "anchorB": { "x": 0, "y": 0 },
+      "anchorA": {
+        "x": 0.5,
+        "y": -0.1
+      },
+      "anchorB": {
+        "x": 0,
+        "y": 0
+      },
       "restLength": 1.2,
       "k": 40
     }
@@ -72,8 +126,14 @@
     {
       "id": "x0",
       "text": "x_0",
-      "point": { "x": 0, "y": -0.1 },
-      "offset": { "x": 0, "y": -0.5 }
+      "point": {
+        "x": 0,
+        "y": -0.1
+      },
+      "offset": {
+        "x": 0,
+        "y": -0.5
+      }
     }
   ],
   "measurements": [
@@ -84,8 +144,14 @@
       "dynamic": true,
       "component": "dx",
       "signed": true,
-      "a": { "kind": "label", "label": "x0" },
-      "b": { "kind": "body", "body": "mass" }
+      "a": {
+        "kind": "label",
+        "label": "x0"
+      },
+      "b": {
+        "kind": "body",
+        "body": "mass"
+      }
     }
   ]
 }

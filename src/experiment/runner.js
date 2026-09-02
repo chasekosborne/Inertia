@@ -88,7 +88,7 @@ export class ExperimentRunner {
   runOne(doc, metric, indepHint = 0) {
     const working = cloneSceneDocument(doc);
     const bodyId = metric.bodyId
-      ?? working.bodies?.find(b => b.type === 'ball' || b.type === 'point-mass' || b.type === 'box')?.id
+      ?? working.bodies?.find(b => b.type === 'ball' || b.type === 'point' || b.type === 'point-mass' || b.type === 'box')?.id
       ?? 'rock_1';
 
     const ctxBase = {

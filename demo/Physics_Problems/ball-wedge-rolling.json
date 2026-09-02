@@ -1,0 +1,95 @@
+{
+  "format": "newton-scene",
+  "version": 2,
+  "meta": {
+    "name": "Ball rolling down a wedge (no slip)",
+    "source": "demo",
+    "demoId": "ball-wedge-rolling",
+    "description": "Anchored wedge θ ≈ 31.0°. Solid disk m = 1 kg, r = 0.1 m, released from rest. Rotation free — rolling without slip (I = ½mr²). Coulomb μ = 0.4 (need μ ≥ (1/3)tanθ ≈ 0.200). Ideal a_cm = (2/3) g sinθ ≈ 3.365 m/s² along the slope."
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "s": 0.55
+  },
+  "bodies": [
+    {
+      "id": "wedge_1",
+      "type": "wedge",
+      "position": {
+        "x": 1.5,
+        "y": 0.9
+      },
+      "angle": 0,
+      "mass": 1,
+      "isStatic": true,
+      "geometry": {
+        "baseWidth": 3,
+        "height": 1.8
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0.4,
+        "muS": 0.4,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ground_1",
+      "type": "ground",
+      "position": {
+        "x": 4,
+        "y": 1.8
+      },
+      "angle": 0,
+      "geometry": {
+        "width": 5,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0.4,
+        "muS": 0.4,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ball_1",
+      "type": "point",
+      "position": {
+        "x": 0.5873336095,
+        "y": 0.2451106508
+      },
+      "angle": 0,
+      "mass": 1,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "radius": 0.1
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0.4,
+        "muS": 0.4,
+        "frictionAir": 0
+      }
+    }
+  ],
+  "constraints": []
+}

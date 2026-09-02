@@ -1,0 +1,124 @@
+{
+  "format": "newton-scene",
+  "version": 2,
+  "meta": {
+    "name": "Landing angle on a hill",
+    "source": "file"
+  },
+  "metricOrigin": {
+    "x": 0,
+    "y": 0
+  },
+  "bodies": [
+    {
+      "id": "wedge_1",
+      "type": "wedge",
+      "position": {
+        "x": 1.9,
+        "y": 1.1
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "mass": 1,
+      "geometry": {
+        "baseWidth": 3.8,
+        "height": 2.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 20,
+        "muS": 20,
+        "frictionAir": 0
+      },
+      "isStatic": true
+    },
+    {
+      "id": "projectile_1",
+      "type": "box",
+      "position": {
+        "x": 0.4838188423,
+        "y": 0.1622446542
+      },
+      "angle": 0.5247957717,
+      "velocity": {
+        "vx": 2.0041450821999987,
+        "vy": 3.4617051419
+      },
+      "mass": 1,
+      "geometry": {
+        "width": 0.2,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 20,
+        "muS": 20,
+        "frictionAir": 0
+      }
+    },
+    {
+      "id": "ground_1",
+      "type": "ground",
+      "position": {
+        "x": 5.5,
+        "y": 2.3
+      },
+      "angle": 0,
+      "velocity": {
+        "vx": 0,
+        "vy": 0
+      },
+      "geometry": {
+        "width": 11,
+        "height": 0.2
+      },
+      "material": {
+        "restitution": 0,
+        "muK": 0,
+        "muS": 0,
+        "frictionAir": 0.01
+      }
+    }
+  ],
+  "constraints": [],
+  "measurements": [
+    {
+      "id": "beta",
+      "kind": "angle",
+      "vertex": {
+        "kind": "body",
+        "body": "projectile_1"
+      },
+      "a": {
+        "kind": "horizontal",
+        "body": "projectile_1",
+        "followVelocityX": true
+      },
+      "b": {
+        "kind": "velocity",
+        "body": "projectile_1"
+      },
+      "label": "β"
+    }
+  ],
+  "environment": {
+    "gravity": {
+      "enabled": true,
+      "g": 9.81
+    },
+    "air": {
+      "enabled": false,
+      "cd": 0.47,
+      "area": 0.045,
+      "rho": 1.225
+    }
+  },
+  "camera": {
+    "tx": 728.7943995600698,
+    "ty": 438.86489768393835,
+    "s": 1.223935652291394
+  }
+}

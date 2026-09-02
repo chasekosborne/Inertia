@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   setDrivenAppliedForce,
   setDrivenAppliedForceExpr,
+  evaluateDrivenAppliedFrequency,
+  evaluateDrivenAppliedOmega,
   evaluateDrivenAppliedForce,
   isDrivenAppliedForce,
   collectDrivenAppliedAppForces,
@@ -12,11 +14,12 @@ import { serializeScene } from '../src/scene/serialize.js';
 import { cloneSceneDocument } from '../src/scene/serialize.js';
 import { loadScene, runForSeconds, findBody } from './helpers/sim.js';
 
+const PULL_AT_ANGLE = '../demo/Physics_Problems/pull-at-angle.json';
 const demoScenes = import.meta.glob('../demo/**/*.json', { eager: true, import: 'default' });
 
 describe('driven applied force', () => {
   it('applies constant F(t) and accelerates a box', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     // Drop gravity / constant F so only our drive moves the body.
     if (doc.environment?.gravity) doc.environment.gravity.enabled = false;
     for (const b of doc.bodies ?? []) {
@@ -25,7 +28,7 @@ describe('driven applied force', () => {
     }
 
     const engine = loadScene(doc);
-    const box = engine.bodies.find(b => b._newtonType === 'box' || b._newtonType === 'point-mass' || b._newtonType === 'ball')
+    const box = engine.bodies.find(b => b._newtonType === 'box' || b._newtonType === 'ball' || b._newtonType === 'point' || b._newtonType === 'point-mass')
       ?? engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     expect(box).toBeTruthy();
 
@@ -42,7 +45,7 @@ describe('driven applied force', () => {
   });
 
   it('exposes F_app for the free-body diagram', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     if (doc.environment?.gravity) doc.environment.gravity.enabled = false;
     for (const b of doc.bodies ?? []) delete b.appliedForce;
 
@@ -60,7 +63,7 @@ describe('driven applied force', () => {
   });
 
   it('flips F_app 180° when F(t) is negative', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     const engine = loadScene(doc);
     const body = engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     setDrivenAppliedForce(body, true);
@@ -73,7 +76,7 @@ describe('driven applied force', () => {
   });
 
   it('serializes and reloads driven applied force', () => {
-    const doc = cloneSceneDocument(demoScenes['../demo/Midterm/pull-at-angle.json']);
+    const doc = cloneSceneDocument(demoScenes[PULL_AT_ANGLE]);
     const engine = loadScene(doc);
     const body = engine.bodies.find(b => !b.isStatic && b._newtonType !== 'metric-basis');
     const id = body.label;
@@ -94,15 +97,31 @@ describe('driven applied force', () => {
     expect(evaluateDrivenAppliedForce(b2, 0.25)).toBeCloseTo(5, 8);
   });
 
+  it('tracks instantaneous frequency and angular frequency for a chirped drive', () => {
+    const doc = cloneSceneDocument(demoScenes['../demo/Classic/driven-harmonic-oscillator.json']);
+    const engine = loadScene(doc);
+    const body = findBody(engine, 'mass');
+
+    expect(evaluateDrivenAppliedFrequency(body, 0)).toBeCloseTo(0.4, 8);
+    expect(evaluateDrivenAppliedFrequency(body, 2)).toBeCloseTo(0.42, 8);
+    expect(evaluateDrivenAppliedOmega(body, 2)).toBeCloseTo(2 * Math.PI * 0.42, 8);
+
+    const out = serializeScene(engine);
+    const entry = out.bodies.find(b => b.id === 'mass');
+    expect(entry.parameters.omega.expression).toBe('2pi(0.4 + 0.01t)');
+    expect(entry.drivenAppliedForce).toBe('2sin(omega t)');
+    expect(entry.drivenAppliedPhaseParameter).toBe('omega');
+  });
+
   it('works on circle, point, box, and wedge types', () => {
     const doc = {
       format: 'newton-scene',
-      version: 1,
+      version: 2,
       metricOrigin: { x: 0, y: 0 },
       environment: { gravity: { enabled: false, g: 9.81 } },
       bodies: [
-        { id: 'b0', type: 'ball', position: { x: 0, y: 0 }, mass: 1, geometry: { radius: 0.2 } },
-        { id: 'b1', type: 'point-mass', position: { x: 1, y: 0 }, mass: 1 },
+        { id: 'b0', type: 'point', position: { x: 0, y: 0 }, mass: 1, geometry: { radius: 0.2 } },
+        { id: 'b1', type: 'ball', position: { x: 1, y: 0 }, mass: 1 },
         { id: 'b2', type: 'box', position: { x: 2, y: 0 }, mass: 1, geometry: { width: 0.4, height: 0.4 } },
         { id: 'b3', type: 'wedge', position: { x: 3, y: 0 }, mass: 1, geometry: { width: 0.6, height: 0.4 } },
       ],

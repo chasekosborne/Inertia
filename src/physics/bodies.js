@@ -1,8 +1,9 @@
 import Matter from 'matter-js';
 import {
   mToPx,
-  DEFAULT_CIRCLE_RADIUS_M,
   DEFAULT_BALL_RADIUS_M,
+  DEFAULT_POINT_RADIUS_M,
+  /** @deprecated */ DEFAULT_CIRCLE_RADIUS_M,
   DEFAULT_BOX_SIZE_M,
 } from '../units.js';
 import { COLORS } from '../theme.js';
@@ -25,9 +26,9 @@ const nextId = () => ++_idCounter;
  */
 const DEFAULTS = {
   mass:        1,
-  restitution: 0.5,
-  muK:         0.3,    // kinetic friction (dynamic)
-  muS:         0.4,    // static friction
+  restitution: 0,
+  muK:         0,
+  muS:         0,
   frictionAir: 0.00,
 };
 
@@ -109,7 +110,7 @@ export function setBodyMass(body, mass) {
 
 /**
  * Shared Matter circle / ball: finite disk inertia so friction can roll or slip.
- * @param {'point-mass'|'ball'} newtonType
+ * @param {'ball'|'point'} newtonType
  */
 function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) {
   const r    = opts.radius ?? mToPx(defaultRadiusM);
@@ -138,10 +139,12 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
   body._muK        = muK;
   body._muS        = muS;
   if (opts.ropeSegment) body._ropeSegment = true;
-  if (newtonType === 'point-mass') {
-    // Filled particle by default; user can switch to a hollow ring in properties.
+  if (newtonType === 'ball') {
+    // Filled by default; user can switch to a hollow ring in properties.
     body._hollow = opts.hollow === true;
   }
+  if (typeof opts.fill === 'string' && opts.fill) body._fill = opts.fill;
+  if (typeof opts.stroke === 'string' && opts.stroke) body._stroke = opts.stroke;
   applyCircleInertia(body);
   // Rope nodes are point masses: spin from polygon contacts makes chains explode.
   if (opts.ropeSegment) {
@@ -154,29 +157,32 @@ function _createCircleBody(x, y, opts, newtonType, defaultRadiusM, labelPrefix) 
 }
 
 /**
- * Circle: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
- * Drawn with box-grey fill (or a hollow ring when `hollow: true`).
- * Physics type id remains `point-mass` for scenes. Finite inertia → can roll.
- */
-export function createPointMass(x, y, opts = {}) {
-  return _createCircleBody(x, y, opts, 'point-mass', DEFAULT_CIRCLE_RADIUS_M, 'point');
-}
-
-/** Alias: same as {@link createPointMass}. */
-export function createCircle(x, y, opts = {}) {
-  return createPointMass(x, y, opts);
-}
-
-/**
- * Point: smaller solid ink disk. Rolls or slips under Coulomb friction.
+ * Ball: diameter matches the default box ({@link DEFAULT_BOX_SIZE_M}).
+ * Drawn with box-grey fill (or a hollow ring when `hollow: true`). Finite inertia → can roll.
  */
 export function createBall(x, y, opts = {}) {
   return _createCircleBody(x, y, opts, 'ball', DEFAULT_BALL_RADIUS_M, 'ball');
 }
 
-/** True for round dynamic bodies (circle or solid ball). */
+/** @deprecated Use {@link createBall}. */
+export function createPointMass(x, y, opts = {}) {
+  return createBall(x, y, opts);
+}
+
+/** Alias: same as {@link createBall}. */
+export function createCircle(x, y, opts = {}) {
+  return createBall(x, y, opts);
+}
+
+/**
+ * Point: smaller solid ink disk. Rolls or slips under Coulomb friction.
+ */
+export function createPoint(x, y, opts = {}) {
+  return _createCircleBody(x, y, opts, 'point', DEFAULT_POINT_RADIUS_M, 'point');
+}
+/** True for round dynamic bodies (ball or point). */
 export function isRoundBody(body) {
-  return body?._newtonType === 'point-mass' || body?._newtonType === 'ball';
+  return body?._newtonType === 'ball' || body?._newtonType === 'point';
 }
 
 /** Fill / outline for textbook-style rigid boxes (outline sits inside physics bounds). */
@@ -197,7 +203,7 @@ export function boxOutlineStrokePx(w, h) {
 
 /** Fixed circle outline thickness (px): same at every radius after scaling. */
 export const CIRCLE_OUTLINE_STROKE_PX = (() => {
-  const r0 = mToPx(DEFAULT_CIRCLE_RADIUS_M);
+  const r0 = mToPx(DEFAULT_BALL_RADIUS_M);
   return Math.min(Math.max(0.75, 0.05 * 2 * r0), 0.2 * r0);
 })();
 
@@ -873,25 +879,58 @@ export function createMetricBasis(x, y) {
   return body;
 }
 
+/** Matter collision thickness for ground (visual slab can be thicker). */
+export const GROUND_COLLISION_THICKNESS = 4;
+
 /**
- * Create a static ground segment (thick static rectangle).
- * Matter stores the body at the rectangle centre, width runs along local +x,
- * then `angle` rotates the slab in the world plane.
+ * Visual rectangle centre for a ground body (scene layout / rendering).
+ * Matter `body.position` is the thin collider centre on the walking surface.
+ * @param {import('matter-js').Body} body
+ */
+export function groundVisualPosition(body) {
+  if (body._visualPosition) return body._visualPosition;
+  return { x: body.position.x, y: body.position.y };
+}
+
+/**
+ * World position of the thin ground collider from the visual centre.
+ * @param {number} visualCx
+ * @param {number} visualCy
+ * @param {number} visualHeight  Full hatched thickness (px)
+ * @param {number} angleRad
+ */
+export function groundColliderPositionFromVisual(visualCx, visualCy, visualHeight, angleRad) {
+  const offsetY = -visualHeight / 2 + GROUND_COLLISION_THICKNESS / 2;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  return {
+    x: visualCx - sin * offsetY,
+    y: visualCy + cos * offsetY,
+  };
+}
+
+/**
+ * Create a static ground segment.
+ * Collision is a thin rectangle along the top walking edge only; the hatched
+ * thickness below is visual. `x`,`y` are the visual rectangle centre.
  */
 export function createGround(x, y, width = 400, height = 20, opts = {}) {
   const muK = opts.muK ?? 0.6;
   const muS = opts.muS ?? 0.8;
-  const body = Bodies.rectangle(x, y, width, height, {
+  const angle = opts.angle ?? 0;
+  const coll = groundColliderPositionFromVisual(x, y, height, angle);
+  const body = Bodies.rectangle(coll.x, coll.y, width, GROUND_COLLISION_THICKNESS, {
     isStatic:       true,
     friction:       muK,
     frictionStatic: muS,
     restitution:    opts.restitution ?? 0.3,
-    angle:          opts.angle ?? 0,
+    angle,
     label: `ground_${nextId()}`,
   });
   body._newtonType = 'ground';
   body._width  = width;
   body._height = height;
+  body._visualPosition = { x, y };
   body._muK    = muK;
   body._muS    = muS;
   return body;

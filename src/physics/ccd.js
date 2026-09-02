@@ -118,7 +118,7 @@ export function ccdStepFraction(bodies, constraints = []) {
   for (const b of bodies) {
     if (b.isStatic || b.isSensor) continue;
     if (b._ropeSegment) continue; // chain CCD-splits chatter on table edges
-    if (b._newtonType !== 'point-mass' && b._newtonType !== 'ball') continue; // round bodies only
+    if (b._newtonType !== 'ball' && b._newtonType !== 'point' && b._newtonType !== 'point-mass') continue; // round bodies only
 
     const R   = b._radius ?? 10;
     const cx  = b.position.x;

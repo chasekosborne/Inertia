@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { splitSeriesAtPeriodicJumps, sampleObservable, buildSeries, graphObservablesForTrack } from '../src/ui/graph-panel.js';
+import {
+  splitSeriesAtPeriodicJumps,
+  sampleObservable,
+  sampleParameter,
+  buildSeries,
+  buildParameterSeries,
+  buildParameterPhaseSeries,
+  graphObservablesForTrack,
+} from '../src/editor/graph-panel.js';
 
 describe('splitSeriesAtPeriodicJumps', () => {
   it('splits at wrapped θ jumps on the y axis', () => {
@@ -45,6 +53,40 @@ describe('driven applied force observable', () => {
     expect(sampleObservable(frames[3], 7, 'Fapp')).toBeNull();
     const series = buildSeries(frames, 7, 'Fapp');
     expect(series.map(p => p.v)).toEqual([0, 5, -2]);
+  });
+});
+
+describe('named parameter graph sources', () => {
+  const frames = [
+    {
+      t: 0,
+      bodies: [{
+        id: 7, x: 0, y: 0, vx: 0, vy: 0, mass: 1,
+        drivenAppliedParameters: { omega: 2 },
+      }],
+    },
+    {
+      t: 1,
+      bodies: [{
+        id: 7, x: 100, y: 0, vx: 0, vy: 0, mass: 1,
+        drivenAppliedParameters: { omega: 3 },
+      }],
+    },
+  ];
+
+  it('samples named parameter values from recorded frames', () => {
+    expect(sampleParameter(frames[1], 7, 'omega')).toBe(3);
+    expect(buildParameterSeries(frames, 7, 'omega')).toEqual([
+      { t: 0, v: 2, i: 0 },
+      { t: 1, v: 3, i: 1 },
+    ]);
+  });
+
+  it('uses a named parameter as the horizontal parametric source', () => {
+    expect(buildParameterPhaseSeries(frames, 7, 'omega', 'x')).toEqual([
+      { t: 2, v: 0, i: 0 },
+      { t: 3, v: 1, i: 1 },
+    ]);
   });
 });
 
